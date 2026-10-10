@@ -1,28 +1,19 @@
 /* ============================================================
    奇门遁甲 · /api/interpret —— 服务端流式解读代理
-   两种密钥来源：
-     ① 服务端配置（推荐）：secret QM_API_KEY + 变量 QM_BASE_URL / QM_MODEL
-     ② 自带密钥 BYOK：请求体带 base / model / key（中转站 CORS 受限时使用）
+   密钥来源（由 _lib.resolveProvider 统一解析）：
+     ① 服务端配置：secret GEMINI_API_KEY / DEEPSEEK_API_KEY / QM_API_KEY
+     ② 自定义 provider：CUSTOM_PROVIDERS + <ID大写>_API_KEY（后台加，无需改代码）
+     ③ 自带密钥 BYOK：请求体带 base / model / key
    统一以 SSE 增量回传（格式与前端 parseSSEChunk 兼容），完成后写 D1。
    ============================================================ */
 import * as L from './_lib.js';
 import SYSTEM_PROMPT from './prompt.js';
 
+/* 供应商选择统一在 _lib.resolveProvider（与 /api/models 同一口径）：
+   BYOK → 自定义 provider → 按模型名前缀（gemini/deepseek）→ 默认 provider 兜底。
+   密钥一律只存在服务端（secret），不下发浏览器。 */
 function pickProvider(env, body) {
-  /* ① 服务端配置优先 */
-  if (env && env.QM_API_KEY) {
-    return {
-      base: (env.QM_BASE_URL || 'https://api.deepseek.com/v1').replace(/\/+$/, ''),
-      model: env.QM_MODEL || 'deepseek-chat',
-      key: env.QM_API_KEY,
-      from: 'server'
-    };
-  }
-  /* ② 自带密钥 */
-  if (body && body.base && body.key && body.model) {
-    return { base: String(body.base).replace(/\/+$/, ''), model: String(body.model), key: String(body.key), from: 'byok' };
-  }
-  return null;
+  return L.resolveProvider(env, body);
 }
 
 async function handle(request, env) {

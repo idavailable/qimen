@@ -14,9 +14,10 @@ const srcV=fs.readFileSync(path.join(dir,'_ui_verify_src.js'),'utf8');
 const srcH=fs.readFileSync(path.join(dir,'_ui_verify_ai.js'),'utf8');
 
 /* ---------- DOM 极简模型 ---------- */
-function makeEl(id){return{id,value:'',innerHTML:'',textContent:'',children:[],scrollTop:0,scrollHeight:0,style:{},className:'',appendChild(c){this.children.push(c);},select(){}};}
+function makeEl(id){return{id,value:'',innerHTML:'',textContent:'',children:[],scrollTop:0,scrollHeight:0,style:{},className:'',appendChild(c){this.children.push(c);},select(){},querySelectorAll(){return[];}};}
 const ids=['iDate','iTime','iLon','iClock','iZi','iJi','out','tDun','tJu','tGZ','yCat','ysBody','ysName','ysBrief',
-           'aiMode','aiBase','aiModel','aiKey','aiQ','aiOut','aiStatus'];
+           'aiMode','aiBase','aiModel','aiKey','aiQ','aiOut','aiStatus',
+           'modelChips','modelWarn','modelRow','byokRow'];
 const els={};ids.forEach(i=>els[i]=makeEl(i));
 els.iLon.value='120';els.iClock.value='true';els.iZi.value='23';els.iJi.value='2';
 els.tDun.value='1';els.tJu.value='1';els.tGZ.value='0';els.yCat.value='qiucai';
@@ -25,7 +26,8 @@ els.aiMode.value='auto';
 /* ---------- 浏览器全局对象（win 即全局） ---------- */
 const win={
   document:{
-    getElementById:id=>els[id]||null,
+    /* 未知 id 自动建并缓存：模拟 innerHTML 渲染出的新节点（多模型分栏 col-* 依赖此行为） */
+    getElementById:id=>els[id]||(els[id]=makeEl(id)),
     createElement:t=>makeEl(t),
     body:{appendChild(){},removeChild(){}},
     execCommand:()=>true

@@ -25,9 +25,18 @@ async function gh(method, p, body) {
   return j;
 }
 
-const files = execSync('git diff --name-only HEAD~1 HEAD', { cwd: ROOT, encoding: 'utf8' })
-  .split('\n').map(s => s.trim()).filter(Boolean);
-const msg = execSync('git log -1 --pretty=%B', { cwd: ROOT, encoding: 'utf8' }).trim();
+/* 文件清单与提交说明：优先读 .git_push_files.txt / .git_push_msg.txt
+ * （execSync 在 Windows 上并发时易 EBUSY，故允许由外层 shell 先生成） */
+let files, msg;
+const FF = path.join(ROOT, '.git_push_files.txt'), MF = path.join(ROOT, '.git_push_msg.txt');
+if (fs.existsSync(FF) && fs.existsSync(MF)) {
+  files = fs.readFileSync(FF, 'utf8').split('\n').map(s => s.trim()).filter(Boolean);
+  msg = fs.readFileSync(MF, 'utf8').trim();
+} else {
+  files = execSync('git diff --name-only HEAD~1 HEAD', { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  msg = execSync('git log -1 --pretty=%B', { cwd: ROOT, encoding: 'utf8' }).trim();
+}
 console.log('待推送文件（' + files.length + '）：\n  ' + files.join('\n  '));
 
 const ref = await gh('GET', '/repos/' + REPO + '/git/ref/heads/main');

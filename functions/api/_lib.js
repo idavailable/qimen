@@ -103,6 +103,87 @@ function rateLimited(env, ip) {
   return c > n;
 }
 
+/* ---------- 供应商解析（models.js 与 interpret.js 共用同一口径） ----------
+   ① BYOK：请求自带 base/model/key
+   ② 自定义 provider：CUSTOM_PROVIDERS（JSON 数组）+ <ID大写>_API_KEY，按模型名匹配
+   ③ 内置：model 以 gemini 开头 → Google；以 deepseek 开头 → DeepSeek
+   ④ 兜底：QM_PROVIDER 指定 / 任一已配密钥 / 通用 QM_API_KEY
+   密钥只存在服务端，不下发浏览器。 */
+function customProviders(env) {
+  if (!env || !env.CUSTOM_PROVIDERS) return [];
+  let arr;
+  try { arr = JSON.parse(env.CUSTOM_PROVIDERS); } catch (e) { return []; }
+  if (!Array.isArray(arr)) return [];
+  return arr.filter(p => p && p.id && p.base && Array.isArray(p.models) && p.models.length);
+}
+function customKeyEnv(id) {
+  return String(id).toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_API_KEY';
+}
+function customProviderWarnings(env) {
+  const w = [];
+  if (env && env.CUSTOM_PROVIDERS) {
+    let arr = null;
+    try { arr = JSON.parse(env.CUSTOM_PROVIDERS); } catch (e) { w.push('CUSTOM_PROVIDERS 不是合法 JSON'); }
+    if (arr && !Array.isArray(arr)) w.push('CUSTOM_PROVIDERS 需为数组');
+    (customProviders(env) || []).forEach(p => {
+      if (!env[customKeyEnv(p.id)]) w.push('自定义供应商 ' + p.id + ' 未配置密钥 ' + customKeyEnv(p.id));
+    });
+  }
+  return w;
+}
+function norm(base) { return String(base || '').replace(/\/+$/, ''); }
+function resolveProvider(env, body) {
+  env = env || {}; body = body || {};
+  /* ① BYOK */
+  if (body.base && body.key && body.model) {
+    return { base: norm(body.base), model: String(body.model), key: String(body.key), from: 'byok' };
+  }
+  const m = body.model ? String(body.model) : '';
+  /* ② 自定义 provider（按模型名匹配） */
+  for (const p of customProviders(env)) {
+    if (m && p.models.indexOf(m) >= 0 && env[customKeyEnv(p.id)]) {
+      return { base: norm(p.base), model: m, key: env[customKeyEnv(p.id)], from: p.id };
+    }
+  }
+  /* ③ 内置（按模型名前缀） */
+  if (/^gemini/i.test(m) && env.GEMINI_API_KEY) {
+    return {
+      base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),
+      model: m, key: env.GEMINI_API_KEY, from: 'gemini'
+    };
+  }
+  if (/^deepseek/i.test(m) && env.DEEPSEEK_API_KEY) {
+    return {
+      base: norm(env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'),
+      model: m, key: env.DEEPSEEK_API_KEY, from: 'deepseek'
+    };
+  }
+  /* ④ 兜底：默认 provider → 任一已配 → 通用 QM_* */
+  const def = String(env.QM_PROVIDER || 'deepseek').toLowerCase();
+  if (def === 'gemini' && env.GEMINI_API_KEY) {
+    return {
+      base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),
+      model: env.GEMINI_MODEL || m || 'gemini-3.8-flash', key: env.GEMINI_API_KEY, from: 'gemini'
+    };
+  }
+  if (env.DEEPSEEK_API_KEY) {
+    return {
+      base: norm(env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'),
+      model: env.DEEPSEEK_MODEL || m || 'deepseek-flash', key: env.DEEPSEEK_API_KEY, from: 'deepseek'
+    };
+  }
+  if (env.GEMINI_API_KEY) {
+    return {
+      base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),
+      model: env.GEMINI_MODEL || m || 'gemini-3.8-flash', key: env.GEMINI_API_KEY, from: 'gemini'
+    };
+  }
+  if (env.QM_API_KEY) {
+    return { base: norm(env.QM_BASE_URL || 'https://api.deepseek.com/v1'), model: env.QM_MODEL || m || 'deepseek-chat', key: env.QM_API_KEY, from: 'server' };
+  }
+  return null;
+}
+
 /* ---------- D1 留痕（失败不影响主流程） ---------- */
 async function saveReading(env, row) {
   try {
@@ -140,3 +221,7 @@ export { saveReading };
 export { hashIP };
 export { SSE_MAX_LINE };
 export { SSE_MAX_REPLY };
+export { customProviders };
+export { customKeyEnv };
+export { customProviderWarnings };
+export { resolveProvider };

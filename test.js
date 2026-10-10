@@ -671,8 +671,59 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
 
   globalThis.fetch=origFetch;
 
+  /* ---- 廿八、/api/models 与供应商路由（多模型对比） ---- */
+  console.log('\n=== 廿八、模型清单与供应商路由 ===');
+  const fm=await import('./functions/api/models.js');
+  const mkReqM=()=>new Request('https://qimen.pages.dev/api/models');
+  const CP=JSON.stringify([{id:'kimi',label:'Moonshot',base:'https://api.moonshot.cn/v1',models:['kimi-k2']}]);
+
+  let mj=await (await fm.handle(mkReqM(),{})).json();
+  ck('28.1 返回 4 个内置模型',mj.models.length,4);
+  ck('28.2 无密钥时 configured 全 false',mj.models.every(m=>m.configured===false),true);
+  ck('28.3 无密钥时给出告警',(mj.warnings||[]).some(w=>w.indexOf('未配置密钥')>=0),true);
+  mj=await (await fm.handle(mkReqM(),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d'})).json();
+  ck('28.4 配密钥后 configured 全 true',mj.models.every(m=>m.configured===true),true);
+  ck('28.5 配齐后无告警',(mj.warnings||[]).length,0);
+  ck('28.6 defaultModel=deepseek-flash',mj.defaultModel,'deepseek-flash');
+  mj=await (await fm.handle(mkReqM(),{CUSTOM_PROVIDERS:CP})).json();
+  ck('28.7 自定义供应商进入清单',mj.models.some(m=>m.id==='kimi-k2'&&m.pv==='Moonshot'),true);
+  ck('28.8 自定义供应商缺密钥 → 告警',(mj.warnings||[]).some(w=>w.indexOf('KIMI_API_KEY')>=0),true);
+  mj=await (await fm.handle(mkReqM(),{CUSTOM_PROVIDERS:CP,KIMI_API_KEY:'kk'})).json();
+  ck('28.9 配密钥后 kimi-k2 可用',mj.models.filter(m=>m.id==='kimi-k2')[0].configured===true,true);
+  mj=await (await fm.handle(mkReqM(),{CUSTOM_PROVIDERS:'{oops'})).json();
+  ck('28.10 CUSTOM_PROVIDERS 坏 JSON → 告警',(mj.warnings||[]).some(w=>w.indexOf('不是合法 JSON')>=0),true);
+
+  const rp=L.resolveProvider;
+  const env2={GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d'};
+  let pv=rp(env2,{model:'gemini-3.8-flash'});
+  ck('28.11 gemini-3.8-flash → Google 兼容端点',pv.base==='https://generativelanguage.googleapis.com/v1beta/openai'&&pv.model==='gemini-3.8-flash'&&pv.from==='gemini',true,JSON.stringify(pv));
+  pv=rp(env2,{model:'deepseek-flash'});
+  ck('28.12 deepseek-flash → DeepSeek',pv.base==='https://api.deepseek.com/v1'&&pv.model==='deepseek-flash'&&pv.from==='deepseek',true);
+  pv=rp({DEEPSEEK_API_KEY:'d'},{model:'gemini-3.8-flash'});
+  ck('28.13 Gemini 无密钥时回落 DeepSeek',pv.from==='deepseek',true,pv.from);
+  pv=rp({GEMINI_API_KEY:'g'},{model:'deepseek-flash'});
+  ck('28.14 DeepSeek 无密钥时回落 Gemini',pv.from==='gemini',true,pv.from);
+  pv=rp({GEMINI_BASE_URL:'https://gateway.example/v1',GEMINI_API_KEY:'g'},{model:'gemini-3.8-flash'});
+  ck('28.15 GEMINI_BASE_URL 可覆盖（接 AI Gateway）',pv.base==='https://gateway.example/v1',true,pv.base);
+  pv=rp({CUSTOM_PROVIDERS:CP,KIMI_API_KEY:'kk'},{model:'kimi-k2'});
+  ck('28.16 自定义供应商命中',pv.base==='https://api.moonshot.cn/v1'&&pv.from==='kimi',true,JSON.stringify(pv));
+  ck('28.17 全无密钥 → null',rp({},{model:'deepseek-flash'}),null);
+  ck('28.18 未指定模型 → 默认 deepseek',rp(env2,{}).from,'deepseek');
+  ck('28.19 QM_PROVIDER=gemini 生效',rp({GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_PROVIDER:'gemini'},{}).from,'gemini');
+  ck('28.20 BYOK 优先于服务端密钥',rp(env2,{base:'https://b/v1',model:'m',key:'k'}).from,'byok');
+
+  /* 端到端：按模型名打到正确上游端点 */
+  globalThis.fetch=mockUpstream('sse');
+  await fi.handle(mkReq({pan:panTxt,model:'gemini-3.8-flash'}),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_DB:fakeD1()});
+  ck('28.21 端到端：gemini 打到 Google 兼容端点',lastUp.url,'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+  ck('28.22 端到端：模型名原样透传',lastUp.body.model,'gemini-3.8-flash');
+  globalThis.fetch=mockUpstream('sse');
+  await fi.handle(mkReq({pan:panTxt,model:'deepseek-v4-pro'}),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_DB:fakeD1()});
+  ck('28.23 端到端：deepseek-v4-pro 打到 DeepSeek',lastUp.url,'https://api.deepseek.com/v1/chat/completions');
+  globalThis.fetch=origFetch;
+
   // 验证完毕输出小计
-  console.log('\n=== 廿六、廿七节异步组执行完毕 ===');
+  console.log('\n=== 廿六 ~ 廿八节异步组执行完毕 ===');
   final();
 })();
 

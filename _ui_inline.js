@@ -226,10 +226,113 @@ function render(R,m){
   </div>`;
   document.getElementById('out').innerHTML=html;
   if(curR&&curR.meta&&!curR.meta.test)renderYongshen(curR);
+  /* 换盘即作废上一盘的多轮追问历史（服务端模式按模型分别记录） */
+  aiStates={};
 }
 
 /* ---------- M4 AI 流式解读（界面层） ---------- */
-let aiHist=[],aiCtrl=null;
+let aiHist=[],aiCtrl=null,aiStates={};
+/* esc：模型 id/label/pv 来自后台变量，一律转义后入 DOM */
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---- 模型芯片（对齐 liuyao：后台 /api/models 驱动，可多选横向对比） ---- */
+const QM_MODELS_KEY='qm_models';
+const MODEL_TIPS={
+  'gemini-3.6-flash':'快','gemini-3.8-flash':'高峰期易过载',
+  'deepseek-flash':'快','deepseek-v4-pro':'深推理 · 慢'
+};
+const DEFAULT_MODELS=['gemini-3.8-flash','deepseek-flash'];
+let MODELS=[
+  {id:'gemini-3.6-flash',pv:'Google',label:'Gemini 3.6 Flash',tip:'快'},
+  {id:'gemini-3.8-flash',pv:'Google',label:'Gemini 3.8 Flash',tip:'高峰期易过载'},
+  {id:'deepseek-flash',pv:'DeepSeek',label:'DeepSeek Flash',tip:'快'},
+  {id:'deepseek-v4-pro',pv:'DeepSeek',label:'DeepSeek V4 Pro',tip:'深推理 · 慢'}
+];
+function modelLabel(id){
+  const p=String(id).split('-');
+  return p[0].charAt(0).toUpperCase()+p[0].slice(1)+(p.length>1?' '+p.slice(1).join(' '):'');
+}
+function loadSelModels(){
+  let saved=[];
+  try{saved=JSON.parse(localStorage.getItem(QM_MODELS_KEY)||'[]');}catch(e){}
+  const valid=(Array.isArray(saved)?saved:[]).filter(m=>MODELS.some(x=>x.id===m));
+  return valid.length?valid:DEFAULT_MODELS.slice();
+}
+let selModels=loadSelModels();
+function applyModels(list){
+  if(!Array.isArray(list)||!list.length)return;
+  MODELS=list.map(m=>({
+    id:m.id,pv:m.pv||'',label:modelLabel(m.id),
+    tip:(m.configured===false)?'后台未配 key':(MODEL_TIPS[m.id]||'')
+  }));
+  /* 合并而非覆盖：清单异步返回期间用户已点选的模型不得被静默丢弃。
+     两处来源都必须按**新清单**过滤——loadSelModels() 在无存档时会回落到 DEFAULT_MODELS，
+     若不过滤，后台清单里已被移除的模型（如只配了 DeepSeek）仍会被选中并发出无效请求。 */
+  const cur=(selModels||[]).filter(id=>MODELS.some(x=>x.id===id));
+  loadSelModels().forEach(id=>{if(cur.indexOf(id)<0&&MODELS.some(x=>x.id===id))cur.push(id);});
+  selModels=cur.length?cur:(MODELS.length?[MODELS[0].id]:[]);
+  renderModelChips();
+}
+async function loadModels(){
+  const warn=document.getElementById('modelWarn');
+  try{
+    const res=await fetch('/api/models');
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const d=await res.json();
+    if(!d||!Array.isArray(d.models)||!d.models.length)throw new Error('模型清单为空');
+    applyModels(d.models);
+    const ws=Array.isArray(d.warnings)?d.warnings.filter(Boolean):[];
+    if(warn){
+      if(ws.length){warn.style.display='block';warn.textContent='⚠ '+ws.join('；');}
+      else{warn.textContent='';warn.style.display='none';}
+    }
+  }catch(e){
+    renderModelChips();
+    if(warn){
+      warn.style.display='block';
+      warn.textContent='⚠ 未能读取后台模型清单（'+(e.message||'接口不可用')+'），当前显示内置清单，可能未配 key。';
+    }
+  }
+}
+function renderModelChips(){
+  const box=document.getElementById('modelChips');
+  if(!box)return;
+  box.innerHTML=MODELS.map(m=>
+    '<button class="mchip'+(selModels.indexOf(m.id)>=0?' on':'')+'" data-m="'+esc(m.id)+'" title="'+esc(m.tip||'')+'">'+
+    '<span class="pv">'+esc(m.pv)+'</span>'+esc(m.label)+(m.tip?'<span class="pv"> · '+esc(m.tip)+'</span>':'')+'</button>').join('');
+  Array.prototype.forEach.call(box.querySelectorAll('.mchip'),btn=>{
+    btn.onclick=function(){
+      const id=btn.dataset.m,i=selModels.indexOf(id);
+      if(i>=0){if(selModels.length>1)selModels.splice(i,1);}
+      else selModels.push(id);
+      try{localStorage.setItem(QM_MODELS_KEY,JSON.stringify(selModels));}catch(e){}
+      renderModelChips();
+    };
+  });
+}
+/* 模型 id → 安全 DOM id（带哈希，避免 gemini-3.6 与 gemini-36 之类去符号后撞名） */
+function midSafe(m){
+  let h=0;
+  for(let i=0;i<m.length;i++)h=(h*31+m.charCodeAt(i))>>>0;
+  return m.replace(/[^a-zA-Z0-9]/g,'')+h.toString(36);
+}
+function aiColBody(id){return document.getElementById('col-'+midSafe(id));}
+function aiRenderCols(list){
+  const out=document.getElementById('aiOut');
+  out.innerHTML='<div class="ai-cols">'+list.map(m=>{
+    const cfg=MODELS.filter(x=>x.id===m)[0]||{label:m,pv:''};
+    return '<div class="ai-col"><div class="ai-col-head">'+esc(cfg.label||m)+
+      '<span class="pv-tag">'+esc(cfg.pv||'')+'</span></div>'+
+      '<div class="ai-col-body" id="col-'+midSafe(m)+'"></div></div>';
+  }).join('')+'</div>';
+}
+/* 按接入方式切换显示：服务端代理 → 模型芯片；前端直连 → base/模型/密钥 */
+function aiSyncMode(){
+  const m=aiMode();
+  const mr=document.getElementById('modelRow'),br=document.getElementById('byokRow');
+  if(mr)mr.style.display=(m==='server')?'':'none';
+  if(br)br.style.display=(m==='server')?'none':'';
+}
 const aiCfg=()=>({
   mode:(document.getElementById('aiMode')?document.getElementById('aiMode').value:'auto'),
   base:(document.getElementById('aiBase').value||'').trim(),
@@ -262,8 +365,8 @@ function aiClearCfg(){
   aiStatus('已清空本机保存的接口配置');
 }
 function aiClearHist(){
-  aiHist=[];
-  document.getElementById('aiOut').textContent='';
+  aiHist=[];aiStates={};
+  document.getElementById('aiOut').innerHTML='';
   aiStatus('已清空对话，下次解读重新起一轮');
 }
 const aiCat=()=>document.getElementById('yCat')?document.getElementById('yCat').value:'qiucai';
@@ -286,9 +389,10 @@ function aiPillars(){
   }catch(e){return '';}
 }
 /* 服务端代理模式：POST /api/interpret，SSE 增量回传，用 QMI.parseSSEChunk 解析 */
-async function aiServerStream(pan,onDelta){
+async function aiServerStream(pan,model,history,onDelta){
   const c=aiCfg();
-  const body={pan:pan,cat:aiCat(),pillars:aiPillars(),question:aiQuestion().slice(0,500),history:aiHist.slice(-8)};
+  const body={pan:pan,cat:aiCat(),pillars:aiPillars(),question:aiQuestion().slice(0,500),
+              history:(Array.isArray(history)?history:[]).slice(-8),model:model||''};
   if(c.base&&c.model&&c.key){body.base=c.base;body.model=c.model;body.key=c.key;}
   const init={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
   if(aiCtrl)init.signal=aiCtrl.signal;
@@ -328,21 +432,48 @@ async function aiRun(){
     aiStatus('请填写接口地址、模型、密钥三项，或把接入方式改为「服务端代理」',true);return;
   }
   QMI.saveCfg(cfg);
-  const out=document.getElementById('aiOut');
-  let acc=out.textContent||'';
-  if(acc)acc+='\n\n────────\n\n';
   aiCtrl=(typeof AbortController==='function')?new AbortController():null;
-  aiStatus('连接中…（'+(mode==='server'?'服务端代理':'前端直连')+'）');
   try{
-    const onDelta=d=>{acc+=d;out.textContent=acc;out.scrollTop=out.scrollHeight;};
-    let reply;
-    if(mode==='server')reply=await aiServerStream(pan,onDelta);
-    else reply=await QMI.interpretStream(cfg,pan,aiHist,onDelta,(url,init)=>{
-      if(aiCtrl)init=Object.assign({},init,{signal:aiCtrl.signal});
-      return fetch(url,init);
-    });
-    aiHist.push({role:'user',content:pan},{role:'assistant',content:reply});
-    aiStatus('完成 · 继续提问将沿用本盘（模型侧受「追问沿用原盘」约束）');
+    if(mode==='server'){
+      /* 服务端代理：按选中的模型并行解读，每个模型一列（对齐 liuyao 多模型对比） */
+      const list=selModels.slice();
+      if(!list.length){aiStatus('请至少选择一个模型',true);return;}
+      /* 不在这里重置 aiStates：多轮追问需沿用上一轮历史（重置只在换盘/清空对话时） */
+      aiRenderCols(list);
+      list.forEach(m=>{const el=aiColBody(m);if(el)el.innerHTML='<span class="loading">推局中…</span>';});
+      aiStatus('连接中…（服务端代理 · '+list.length+' 个模型）');
+      let okN=0,lastErr='';
+      await Promise.all(list.map(async m=>{
+        const prev=(aiStates[m]&&aiStates[m].history)?aiStates[m].history:[];
+        try{
+          const reply=await aiServerStream(pan,m,prev,d=>{
+            const el=aiColBody(m);
+            if(el){if(el.textContent==='推局中…')el.textContent='';el.textContent+=d;}
+          });
+          aiStates[m]={history:prev.concat([{role:'user',content:pan},{role:'assistant',content:reply}])};
+          okN++;
+        }catch(e){
+          lastErr=(e&&e.message)?e.message:String(e);
+          const el=aiColBody(m);
+          if(el)el.innerHTML='<span style="color:#A32D2D">失败：'+esc(lastErr)+'</span>';
+        }
+      }));
+      if(okN===list.length)aiStatus('完成 · 继续提问将沿用本盘（模型侧受「追问沿用原盘」约束）');
+      else if(okN>0)aiStatus('完成 '+okN+'/'+list.length+'（部分模型失败：'+lastErr+'）',true);
+      else aiStatus('全部失败：'+lastErr+' —— 若提示未配置密钥，请到 Pages 后台设置对应 secret',true);
+    }else{
+      /* 前端直连：单列，沿用上一轮历史 */
+      aiRenderCols(['front']);
+      const out=aiColBody('front');
+      let acc='';
+      aiStatus('连接中…（前端直连）');
+      const reply=await QMI.interpretStream(cfg,pan,aiHist,d=>{acc+=d;if(out)out.textContent=acc;},(url,init)=>{
+        if(aiCtrl)init=Object.assign({},init,{signal:aiCtrl.signal});
+        return fetch(url,init);
+      });
+      aiHist.push({role:'user',content:pan},{role:'assistant',content:reply});
+      aiStatus('完成 · 继续提问将沿用本盘（模型侧受「追问沿用原盘」约束）');
+    }
   }catch(e){
     const msg=e&&e.message?e.message:String(e);
     if(aiCtrl&&aiCtrl.signal&&aiCtrl.signal.aborted)aiStatus('已停止',true);
@@ -380,5 +511,8 @@ function aiCopyPan(){
   const sel=document.getElementById('tGZ');
   for(let i=0;i<60;i++){const o=document.createElement('option');o.value=i;o.textContent=gz(i);sel.appendChild(o);}
   aiLoadCfg();
+  renderModelChips();
+  aiSyncMode();
+  if(aiMode()==='server')loadModels(); /* 本地双击打开时不拉，避免无谓告警 */
   setNow();
 })();

@@ -45,7 +45,7 @@ g('aiKey').value='sk-test';
 g('aiQ').value='这笔订单该不该签';
 aiClearHist();
 await aiRun();
-ck('H11 流式输出正确拼接',g('aiOut').textContent,'一、盘面要点：值符落宫，用神生克。');
+ck('H11 流式输出正确拼接',aiColBody('front').textContent,'一、盘面要点：值符落宫，用神生克。');
 ck('H12 完成后状态提示',g('aiStatus').textContent.includes('完成'));
 ck('H13 URL 拼装（末尾斜杠归一）',__fetches[__fetches.length-1].url,'https://api.example.com/v1/chat/completions');
 const b1=__fetches[__fetches.length-1].body;
@@ -59,7 +59,7 @@ await aiRun();
 const b2=__fetches[__fetches.length-1].body;
 ck('H18 第二轮带历史（4 条）',b2.messages.length,4);
 ck('H19 第二轮首条仍是 system',b2.messages[0].role,'system');
-ck('H20 多轮输出拼接（含分隔线）',g('aiOut').textContent.includes('────────'));
+ck('H20 第二轮沿用原盘（历史已由 H18 校验，此处校验输出仍在）',aiColBody('front').textContent.length>0);
 
 /* H21 停止 */
 aiCtrl=new AbortController();
@@ -88,23 +88,32 @@ await aiRun();
 ck('H27 HTTP_401 错误提示',g('aiStatus').textContent.includes('HTTP_401'));
 fetch=oldFetch;
 
-/* ---- I · 服务端代理模式（部署版 /api/interpret） ---- */
+/* ---- I · 服务端代理模式（部署版 /api/interpret，多模型并行） ---- */
 console.log('\n=== I · 服务端代理模式 ===');
 g('aiBase').value='';g('aiModel').value='';g('aiKey').value='';
 g('aiQ').value='这笔订单该不该签';
 aiClearHist();
-g('aiOut').textContent='';
+g('aiOut').innerHTML='';
 g('aiMode').value='server';
+aiSyncMode();
+ck('I0 模型行可见 / BYOK 行隐藏',g('modelRow').style.display!=='none'&&g('byokRow').style.display==='none',
+   'modelRow='+JSON.stringify(g('modelRow').style.display)+' byokRow='+JSON.stringify(g('byokRow').style.display));
+ck('I0b 默认选中 2 个模型芯片',selModels.length===2&&selModels.indexOf('gemini-3.8-flash')>=0&&selModels.indexOf('deepseek-flash')>=0,
+   '实际='+JSON.stringify(selModels));
 __fetches.length=0;
 await aiRun();
-const f1=__fetches[__fetches.length-1];
-ck('I1 请求打到 /api/interpret',f1.url==='/api/interpret','实际='+f1.url);
+ck('I1 每个选中模型各发一次到 /api/interpret',__fetches.length===2&&__fetches.every(f=>f.url==='/api/interpret'),
+   '实际='+__fetches.length+' 次，url='+JSON.stringify(__fetches.map(f=>f.url)));
+const f1=__fetches[0];
 ck('I2 body 含 pan/cat/question/history',!!f1.body.pan&&!!f1.body.cat&&f1.body.question==='这笔订单该不该签'&&Array.isArray(f1.body.history));
 ck('I3 服务端模式下问事不并进 pan',f1.body.pan.indexOf('【所问何事】')<0);
 ck('I4 未填密钥时不带 base/key',f1.body.base===undefined&&f1.body.key===undefined,'实际='+JSON.stringify(Object.keys(f1.body)));
-ck('I5 服务端流式拼接正确',g('aiOut').textContent,'一、盘面要点：值符落宫，用神生克。');
+ck('I4b 每个请求带各自模型名',__fetches.map(f=>f.body.model).sort().join('|'),'deepseek-flash|gemini-3.8-flash');
+ck('I5 各模型列均收到流式正文',Object.keys(aiStates).length===2&&
+   Object.keys(aiStates).every(m=>aiStates[m].history.some(h=>h.content==='一、盘面要点：值符落宫，用神生克。')),
+   '实际='+JSON.stringify(Object.keys(aiStates)));
 ck('I6 完成后状态提示',g('aiStatus').textContent.includes('完成'),'实际='+g('aiStatus').textContent);
-ck('I7 历史入栈（user+assistant）',aiHist.length===2,'实际='+aiHist.length);
+ck('I7 历史按模型分别入栈（各 2 条）',Object.keys(aiStates).every(m=>aiStates[m].history.length===2),'实际='+JSON.stringify(Object.keys(aiStates).map(m=>aiStates[m].history.length)));
 ck('I8 四柱随请求上报',typeof f1.body.pillars==='string'&&f1.body.pillars.length>0,'实际='+f1.body.pillars);
 
 /* I9 BYOK：填了密钥时随请求带上 */
@@ -113,7 +122,7 @@ __fetches.length=0;
 await aiRun();
 const f2=__fetches[__fetches.length-1];
 ck('I9 BYOK 时带 base/model/key',f2.body.base==='https://api.example.com/v1'&&f2.body.model==='m'&&f2.body.key==='k','实际='+JSON.stringify([f2.body.base,f2.body.model,f2.body.key]));
-ck('I10 BYOK 第二轮带历史',Array.isArray(f2.body.history)&&f2.body.history.length===2,'实际='+(f2.body.history||[]).length);
+ck('I10 第二轮带上一轮历史',__fetches.every(f=>Array.isArray(f.body.history)&&f.body.history.length===2),'实际='+JSON.stringify(__fetches.map(f=>f.body.history.length)));
 
 /* I11 auto 模式判定：线上 https → server；本地 file → front */
 g('aiMode').value='auto';
@@ -129,4 +138,22 @@ fetch=function(){return Promise.resolve({ok:false,status:400,headers:{get:()=>'a
 await aiRun();
 ck('I13 服务端 400 错误透传',g('aiStatus').textContent.includes('服务端未配置模型密钥'),'实际='+g('aiStatus').textContent);
 fetch=oldFetch2;
+
+/* I14 模型芯片渲染 / 单选 / 后台清单覆盖 / 拉取失败兜底 */
+renderModelChips();
+ck('I14 芯片含内置模型',g('modelChips').innerHTML.includes('gemini-3.8-flash')&&g('modelChips').innerHTML.includes('deepseek-flash'));
+g('aiBase').value='';g('aiModel').value='';g('aiKey').value=''; /* 清掉 BYOK，回到服务端密钥模式 */
+selModels=['deepseek-flash'];
+__fetches.length=0;
+await aiRun();
+ck('I15 单选模型只发一次请求',__fetches.length===1&&__fetches[0].body.model==='deepseek-flash','实际='+__fetches.length+' / '+JSON.stringify(__fetches.map(f=>f.body.model)));
+applyModels([{id:'gemini-3.8-flash',pv:'Google',configured:true},{id:'kimi-k2',pv:'Moonshot',configured:false}]);
+ck('I16 后台清单覆盖内置清单',MODELS.length===2&&MODELS[1].id==='kimi-k2'&&MODELS[1].tip==='后台未配 key','实际='+JSON.stringify(MODELS.map(m=>m.id+':'+m.tip)));
+ck('I17 清单变更后已选模型取交集（不丢不越）',selModels.indexOf('deepseek-flash')<0&&selModels.length>=1,'实际='+JSON.stringify(selModels));
+const oldF3=fetch;
+fetch=function(){return Promise.resolve({ok:false,status:500,headers:{get:()=>'application/json'},text:()=>Promise.resolve('x'),json:()=>Promise.resolve({})});};
+await loadModels();
+ck('I18 清单拉取失败给出可见告警',g('modelWarn').textContent.includes('未能读取后台模型清单'),'实际='+g('modelWarn').textContent);
+fetch=oldF3;
+selModels=['gemini-3.8-flash','deepseek-flash'];
 g('aiMode').value='auto';
