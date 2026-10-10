@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>奇门遁甲决策工具 · M1-M4</title>
+<style>
+:root{
+  --bg:#f7f6f2;--card:#fff;--line:#dcd9d0;--ink:#2c2c2a;--muted:#6f6e68;
+  --accent:#0F6E56;--yang:#993C1D;--yin:#0C447C;--amber:#854F0B;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:18px;font-size:14px;line-height:1.6}
+h1{font-size:19px;font-weight:600}
+h2{font-size:15px;font-weight:600;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sub{color:var(--muted);font-size:12px;margin:2px 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:11px;color:var(--muted)}
+input,select{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink)}
+input[type=number]{width:78px}
+button{padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-family:inherit}
+button:hover{opacity:.88}
+button.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);padding:8px 14px;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:780px;margin:0 auto}
+.pal{border:1px solid var(--line);border-radius:8px;padding:8px;min-height:124px;background:#fdfdfc;position:relative}
+.pal.mid{background:#f1f0ea}
+.pal .hd{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:5px}
+.pal .god{font-size:12px;color:var(--amber);font-weight:600;min-height:18px}
+.pal .sd{display:flex;gap:8px;font-size:12px;min-height:18px}
+.pal .star{color:#185FA5}
+.pal .door{color:var(--yang)}
+.pal .stems{display:flex;justify-content:space-between;align-items:baseline;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+.pal .sky{font-size:19px;font-weight:600;letter-spacing:1px}
+.pal .sky.two{font-size:15px}
+.pal .sky .ji{font-size:12px;color:var(--amber);vertical-align:super}
+.pal .earth{font-size:14px;color:var(--muted)}
+.pal .tag{position:absolute;top:7px;right:8px;font-size:10px;padding:1px 5px;border-radius:3px;font-weight:600}
+.tag.zf{background:#FCEBEB;color:#A32D2D}
+.tag.zs{background:#E6F1FB;color:#185FA5}
+.tag.kong{background:#EFEBE2;color:#7A7462}
+.tag.ma{background:#F3EAFB;color:#7A3FA8}
+.tag.day{background:#EAF3DE;color:#27500A}
+.pal.kong{background:#faf9f4}
+.pal .fx{font-size:10px;color:#A32D2D;margin-top:3px;min-height:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:5px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;width:118px;background:#faf9f6;white-space:nowrap}
+.badge{display:inline-block;padding:2px 9px;border-radius:4px;font-size:12px;font-weight:600}
+.badge.yang{background:#FAECE7;color:var(--yang)}
+.badge.yin{background:#E6F1FB;color:var(--yin)}
+.note{font-size:12px;color:var(--muted);margin-top:10px;padding:8px 10px;background:#faf9f6;border-radius:6px;border-left:3px solid var(--line)}
+.note.warn{border-left-color:#BA7517;background:#FAEEDA;color:#633806}
+.flex{display:flex;gap:14px;flex-wrap:wrap}
+.flex>div{flex:1;min-width:300px}
+.chip{display:inline-block;padding:3px 9px;margin:2px 3px 2px 0;border-radius:5px;font-size:12px;border:1px solid var(--line);background:#faf9f6}
+.chip.ji{background:#EAF3DE;border-color:#97C459;color:#27500A}
+.chip.xiong{background:#FCEBEB;border-color:#F09595;color:#791F1F}
+.chip.zhong{background:#F6F1E5;border-color:#D3C490;color:#6E5C12}
+.geju-group{margin:6px 0 2px;font-size:12px;font-weight:600;color:#55524b;border-bottom:1px dashed var(--line);padding-bottom:2px}
+code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 5px;border-radius:3px;font-size:12px}
+.legend{font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
+@media(max-width:640px){.grid{gap:4px}.pal{min-height:104px;padding:5px}.pal .sky{font-size:16px}}
+</style>
+</head>
+<body>
+
+<h1>奇门遁甲决策工具</h1>
+<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 248 项全过 + 浏览器沙箱全流程 67 项全过</div>
+
+<div class="card">
+  <h2>一、输入</h2>
+  <div class="row">
+    <div class="field"><label>日期</label><input type="date" id="iDate"></div>
+    <div class="field"><label>时间（当地钟表时）</label><input type="time" id="iTime" step="60"></div>
+    <div class="field"><label>东经度数</label><input type="number" id="iLon" value="120" step="0.1"></div>
+    <div class="field"><label>时间基准</label>
+      <select id="iClock">
+        <option value="std">北京时间（东八区标准时）</option>
+        <option value="local">地方平太阳时（仅经度修正）</option>
+        <option value="true" selected>真太阳时（经度+均时差）</option>
+      </select>
+    </div>
+    <div class="field"><label>子时换日</label>
+      <select id="iZi">
+        <option value="23" selected>23:00 换日（传统）</option>
+        <option value="0">00:00 换日</option>
+      </select>
+    </div>
+    <div class="field"><label>时干入中寄</label>
+      <select id="iJi">
+        <option value="2" selected>寄坤二宫（通行）</option>
+        <option value="8">寄艮八宫</option>
+      </select>
+    </div>
+    <button onclick="cast()">起局</button>
+    <button class="ghost" onclick="setNow()">现在</button>
+  </div>
+  <div class="note warn">当前仅实现 <b>拆补法</b>（现代排盘软件主流，如元亨利贞默认）。<b>置闰法（超神接气）</b> 与 <b>飞盘派</b> 尚未实现，见文末路线图。中宫规则：<b>天禽恒随天芮</b>，中宫干寄于天芮所临之宫并显。</div>
+</div>
+
+<div id="out"></div>
+
+<div class="card">
+  <h2>六、AI 流式解读 <span style="font-size:11px;color:#6f6e68;font-weight:400">（M4 · 盘面+格局+用神 → 提示词 → OpenAI 兼容接口，流式输出）</span></h2>
+  <div class="row">
+    <div class="field"><label>接入方式</label>
+      <select id="aiMode" style="width:230px">
+        <option value="auto">自动（线上走服务端 · 本地双击走直连）</option>
+        <option value="server">服务端代理（/api/interpret）</option>
+        <option value="front">前端直连（需自填接口与密钥）</option>
+      </select>
+    </div>
+    <div class="field"><label>接口地址（OpenAI 兼容 base）</label><input id="aiBase" placeholder="https://api.deepseek.com/v1" style="width:250px"></div>
+    <div class="field"><label>模型</label><input id="aiModel" placeholder="deepseek-chat" style="width:150px"></div>
+    <div class="field"><label>密钥</label><input type="password" id="aiKey" style="width:170px"></div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div class="field"><label>补充问事（选填，附于盘面之后）</label><input id="aiQ" style="width:300px" placeholder="例：这笔订单该不该签"></div>
+    <button onclick="aiRun()">流式解读</button>
+    <button class="ghost" onclick="aiStop()">停止</button>
+    <button class="ghost" onclick="aiCopyPan()">复制盘面提示词</button>
+    <button class="ghost" onclick="aiClearHist()">清空对话</button>
+    <button class="ghost" onclick="aiClearCfg()">清空配置</button>
+  </div>
+  <div id="aiStatus" class="note" style="display:none"></div>
+  <div id="aiOut" style="margin-top:10px;white-space:pre-wrap;border:1px solid var(--line);border-radius:8px;padding:12px;min-height:84px;background:#fdfdfc;font-size:13px;line-height:1.75"></div>
+  <div class="legend" style="text-align:left;margin-top:8px">
+    <b>服务端代理</b>（线上默认）：请求发本站 <code>/api/interpret</code>，密钥可在服务端配置为 secret，浏览器无需填密钥；每次解读写入 D1 留痕（IP 仅存哈希）。
+    服务端未配置密钥时，可在本页填 base/模型/密钥随请求带上（用于中转站）。
+    <b>前端直连</b>（本地双击打开默认）：密钥仅存本机 localStorage，请求直发所填接口、不经中间服务器；要求接口支持 OpenAI 兼容 <code>/chat/completions</code> 与 <code>stream:true</code>，
+    若报 <b>CORS 跨域</b>说明该接口不允许浏览器直调。
+    多轮追问沿用同一盘面（模型侧受「追问沿用原盘」契约约束）；盘面事实不可改写、主次次序、现实边界三条契约随提示词下发。
+  </div>
+</div>
+
+<div class="card">
+  <h2>附录 · 校验用局（手工核对）</h2>
+  <div class="row">
+    <div class="field"><label>阴阳遁</label>
+      <select id="tDun"><option value="1">阳遁</option><option value="-1">阴遁</option></select>
+    </div>
+    <div class="field"><label>局数</label><input type="number" id="tJu" value="1" min="1" max="9"></div>
+    <div class="field"><label>时干支</label>
+      <select id="tGZ"></select>
+    </div>
+    <button class="ghost" onclick="castTest()">排此局</button>
+  </div>
+  <div class="note">
+    《烟波钓叟歌》池纪句解原文例：<b>阳遁一局</b>，甲子时值符天蓬加一宫、值使休门在一宫；乙丑时值符到九宫、值使到二宫；丙寅时值符到八宫、值使到三宫。
+    可用上面三个时干支逐一核对，结果一致即证明旋转算法正确（已由 node test.js 自动化验证）。
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script src="yongshen.js"></script>
+<script src="prompt.js"></script>
+<script src="interpret.js"></script>
+<script>
+/* ============================================================
+   界面层：engine.js（QM）提供全部算法，此处只做输入与渲染
+   ============================================================ */
+const {PAL,GRID,gz,DOOR_WX,ke,TG_WX}=QM;
+let curR=null; // 当前解盘对象（供用神区联动）
+
+function fmtJD(jd){
+  const d=QM.jdToUTC(jd+8/24);
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
+
+// 格局：engine.js 的 geju 已含全部规则（含五不遇时），此处只传入日干
+function gejuUI(R,dayGan){return QM.geju(R,dayGan);}
+
+function setNow(){
+  const n=new Date(),p=x=>String(x).padStart(2,'0');
+  document.getElementById('iDate').value=`${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`;
+  document.getElementById('iTime').value=`${p(n.getHours())}:${p(n.getMinutes())}`;
+  cast();
+}
+
+function cast(){
+  const ds=document.getElementById('iDate').value;
+  const ts=document.getElementById('iTime').value;
+  if(!ds||!ts){alert('请填写日期与时间');return;}
+  const lon=parseFloat(document.getElementById('iLon').value)||120;
+  const clock=document.getElementById('iClock').value;
+  const ziSwap=document.getElementById('iZi').value==='23';
+  const jg=parseInt(document.getElementById('iJi').value);
+  const [Y,M,D]=ds.split('-').map(Number);
+  const [h0,m0]=ts.split(':').map(Number);
+  const R=QM.cast(Y,M,D,h0,m0,{lon,clock,ziSwap,jg});
+  curR=R;
+  render(R,R.meta);
+}
+
+function castTest(){
+  const dun=parseInt(document.getElementById('tDun').value);
+  const ju=parseInt(document.getElementById('tJu').value);
+  const hourIdx=parseInt(document.getElementById('tGZ').value);
+  const jg=parseInt(document.getElementById('iJi').value);
+  const R=QM.paipan(dun,ju,hourIdx,jg);
+  curR=R;
+  render(R,{test:true,hourGZ:gz(hourIdx),jg});
+}
+
+/* ---------- M3 用神取法（界面层） ---------- */
+const relBadge=rel=>{
+  const cls=rel==='自身'||rel==='生日干'||rel==='被日干生'?'ji':rel==='克日干'||rel==='日干克'?'xiong':'zhong';
+  return `<span class="chip ${cls}" style="margin:0">${rel}</span>`;
+};
+function renderYongshen(R){
+  if(!R||!R.meta||R.meta.test)return; // 校验用局无日时干支，用神区不可用
+  const catId=document.getElementById('yCat')?document.getElementById('yCat').value:'qiucai';
+  const t=YS.take(R,catId);
+  const body=t.items.map(x=>{
+    const wx=x.pal&&x.pal>=1&&x.pal<=9?PAL[x.pal].wx:'—';
+    const kong=x.desc.includes('旬空')?' <span class="tag kong" style="position:static">旬空</span>':'';
+    const palTxt=x.pal?`${PAL[x.pal].gua}${x.pal}宫${kong}`:'<span style="color:#A32D2D">未找到</span>';
+    return `<tr><td>${x.role}</td><td><b>${x.sym}</b></td><td>${palTxt}</td><td>${wx}</td><td>${relBadge(x.rel)}</td></tr>`;
+  }).join('');
+  document.getElementById('ysBody').innerHTML=body;
+  document.getElementById('ysName').textContent=`${t.name} · 日干${YS.pillars(R).day}=求测人`;
+  document.getElementById('ysBrief').textContent=YS.brief(R,catId);
+}
+
+function render(R,m){
+  const dayGan=m.test?null:m.dayGZ.charAt(0);
+  const G=gejuUI(R,dayGan);
+  const dunBadge=`<span class="badge ${R.dun===1?'yang':'yin'}">${R.dun===1?'阳遁':'阴遁'}${R.ju}局</span>`;
+  const guestNote=`天禽随天芮寄 <b>${PAL[R.guest.pal].gua}${R.guest.pal}宫</b>（中宫干 <b>${R.guest.gan}</b> 并显）${R.guest.isZF?' · <b>天禽为值符</b>':''}`;
+
+  let head='';
+  if(m.test){
+    head=`<div class="card"><h2>校验用局（手工指定）</h2>
+      <table>
+      <tr><th>局</th><td>${dunBadge} &nbsp; 时干入中寄${PAL[m.jg].gua}${m.jg}宫</td></tr>
+      <tr><th>时干支</th><td><b>${m.hourGZ}</b>（旬首 <b>${R.xunName}</b>，遁 ${R.xunYi}；旬内第 ${R.n} 位）</td></tr>
+      <tr><th>值符</th><td>${R.zfStar}${R.zfPal===5?'（禽随芮，视同自坤二起转）':''}（原居${PAL[R.zfPal].gua}${R.zfPal}宫）→ 加时干落 <b>${PAL[R.zfTo].gua}${R.zfTo}宫</b></td></tr>
+      <tr><th>值使</th><td>${R.zsDoor}（原居${PAL[R.zsPal].gua}${R.zsPal}宫）→ 飞${R.n-1}步落 <b>${PAL[R.zsLuo].gua}${R.zsLuo}宫</b></td></tr>
+      <tr><th>中宫寄宫</th><td>${guestNote}</td></tr>
+      </table></div>`;
+  }else{
+    head=`<div class="card"><h2>二、四柱与定局</h2>
+    <div class="flex"><div>
+    <table>
+      <tr><th>公历</th><td>${m.ly}-${String(m.lm).padStart(2,'0')}-${String(m.ld).padStart(2,'0')} ${String(m.lh).padStart(2,'0')}:${String(m.lmi).padStart(2,'0')}</td></tr>
+      <tr><th>时间基准</th><td>${{std:'北京时间',local:'地方平太阳时',true:'真太阳时'}[m.clock]}
+        ${m.clock!=='std'?`（经度修正 ${m.lonCorr>=0?'+':''}${m.lonCorr.toFixed(1)} 分${m.clock==='true'?`，均时差 ${m.eot>=0?'+':''}${m.eot.toFixed(1)} 分`:''}）`:''}</td></tr>
+      <tr><th>日 / 时干支</th><td><b>${m.dayGZ}</b> 日 &nbsp; <b>${m.hourGZ}</b> 时 ${m.ziSwap?'':'<span style="color:#854F0B">（00:00 换日）</span>'}</td></tr>
+      <tr><th>旬首</th><td>${R.xunName} 旬，遁于六仪 <b>${R.xunYi}</b>；时居旬内第 <b>${R.n}</b> 位</td></tr>
+    </table></div><div>
+    <table>
+      <tr><th>当前节气</th><td><b>${m.term}</b> · 交于 ${fmtJD(m.termJD)}</td></tr>
+      <tr><th>下一节气</th><td>${m.nextTerm} · ${fmtJD(m.nextJD)}</td></tr>
+      <tr><th>年干支</th><td><b>${R.nian.gan}${R.nian.zhi}</b> 年（${m.ly}）· 年马星 <b>${R.ma.year.zhi}</b>（${PAL[R.ma.year.pal].gua}${R.ma.year.pal}宫）</td></tr>
+      <tr><th>旬空（空亡）</th><td>时${R.xunName}旬空 <b>${R.kong.hour.zhi.join('、')}</b> 落 ${[...new Set(R.kong.hour.pal)].map(p=>PAL[p].gua+p+'宫').join('、')}；日${gz(R.meta.dayIdx-(R.meta.dayIdx%10)).slice(0,2)}旬空 <b>${R.kong.day.zhi.join('、')}</b></td></tr>
+      <tr><th>符头（拆补）</th><td>${m.fuTou} 日${m.fuTouBack>0?`（${m.fuTouBack} 日前）`:''} → <b>${m.yuanName}</b></td></tr>
+      <tr><th>定局</th><td>${dunBadge} &nbsp; ${m.term}${m.yuanName}＝${R.ju}局</td></tr>
+      <tr><th>值符 / 值使</th><td>${R.zfStar} 落 ${PAL[R.zfTo].gua}${R.zfTo}宫 &nbsp;/&nbsp; ${R.zsDoor} 落 ${PAL[R.zsLuo].gua}${R.zsLuo}宫</td></tr>
+      <tr><th>中宫寄宫</th><td>${guestNote}</td></tr>
+    </table></div></div></div>`;
+  }
+
+  // 九宫格
+  const kongPal=new Set(R.kong.hour.pal||[]);
+  const dayKongPal=new Set((R.kong.day&&R.kong.day.pal)||[]);
+  const maPal=R.ma?R.ma.day.pal:null;
+  const dayPal=(R.luo&&R.luo.dayPal)||null;
+  let cells='';
+  for(const p of GRID){
+    const isMid=p===5;
+    const isGuest=!isMid&&R.guest&&p===R.guest.pal;
+    const showJi=isGuest&&R.guest.gan!==R.tian[p];
+    const sky=isMid?R.di[5]:R.tian[p];
+    const starTxt=isMid?'天禽':(R.tianStar[p]+(isGuest?'<span style="color:#854F0B">·禽</span>':''));
+    const isKong=kongPal.has(p)||dayKongPal.has(p);
+    const tags=[];
+    if(p===R.zfTo)tags.push('<span class="tag zf">值符</span>');
+    if(p===R.zsLuo)tags.push('<span class="tag zs">值使</span>');
+    if(isKong)tags.push('<span class="tag kong">旬空</span>');
+    if(maPal===p)tags.push('<span class="tag ma">马</span>');
+    if(dayPal===p&&!isMid)tags.push('<span class="tag day">日干</span>');
+    cells+=`<div class="pal${isMid?' mid':''}${isKong?' kong':''}">
+      ${tags.join('')}
+      <div class="hd"><span>${PAL[p].gua}${p} · ${PAL[p].dir}</span><span>${PAL[p].wx}</span></div>
+      <div class="god">${R.god[p]}</div>
+      <div class="sd"><span class="star">${starTxt}</span><span class="door">${R.door[p]}</span></div>
+      <div class="stems"><span class="sky${showJi?' two':''}">${sky}${showJi?`<span class="ji">${R.guest.gan}</span>`:''}</span><span class="earth">${R.di[p]}</span></div>
+      <div class="fx">${isMid?`中干${R.di[5]} → 寄${PAL[R.guest.pal].gua}${R.guest.pal}宫`:''}</div>
+    </div>`;
+  }
+
+  const html=head+`
+  <div class="card">
+    <h2>三、九宫盘</h2>
+    <div class="grid">${cells}</div>
+    <div class="legend">每宫自上而下：八神 / 九星 · 八门 / <b>天盘干</b>（右上角小字为寄宫之中宫干）· 地盘干 &nbsp;—&nbsp; 南下北上，符合洛书方位<br>标记：<span class="tag zf" style="position:static">值符</span> <span class="tag zs" style="position:static">值使</span> <span class="tag kong" style="position:static">旬空</span>（时/日旬空所落之宫）<span class="tag ma" style="position:static">马</span>（日马星）<span class="tag day" style="position:static">日干</span>（日干六仪落宫）</div>
+  </div>
+
+  <div class="card">
+    <h2>四、格局速览 <span style="font-size:11px;color:#6f6e68;font-weight:400">（M2 · 十干克应 81 格全表 + 三奇应克 + 九遁 + 凶格）</span></h2>
+    ${(()=>{
+      if(!G.length)return '<span class="chip">未检出显著格局</span>';
+      const groups={};
+      for(const x of G)(groups[x.cat||'其他']=groups[x.cat||'其他']||[]).push(x);
+      return Object.entries(groups).map(([cat,arr])=>
+        `<div class="geju-group">${cat}</div>`+
+        arr.map(x=>`<span class="chip ${x.t==='吉'?'ji':x.t==='中'?'zhong':'xiong'}" title="${x.txt}">${x.t} ${x.txt.split('——')[0]}</span>`).join('')
+      ).join('');
+    })()}
+  </div>
+
+  <div class="card">
+    <h2>五、问事用神 <span style="font-size:11px;color:#6f6e68;font-weight:400">（M3 · 日干=求测人，时干=所问事）</span></h2>
+    <div class="row" style="margin-bottom:10px">
+      <div class="field"><label>问事类型</label>
+        <select id="yCat" onchange="renderYongshen(curR)">
+          <option value="qiucai">经营求财</option><option value="gongzuo">工作求职</option>
+          <option value="hunyin">恋爱婚姻</option><option value="jibing">疾病</option>
+          <option value="guansi">官司诉讼</option><option value="chuxing">出行远行</option>
+          <option value="shiwu">失物</option><option value="tianqi">天气</option>
+          <option value="fangdichan">买卖房产</option><option value="kaocha">考试升学</option>
+        </select>
+      </div>
+      <div class="field"><label>速览</label><div id="ysName" style="font-size:13px;font-weight:600"></div></div>
+    </div>
+    <div id="ysBrief" class="note" style="margin-top:0"></div>
+    <table>
+      <tr><th style="width:130px">用神角色</th><th style="width:60px">符号</th><th>落宫</th><th style="width:50px">五行</th><th style="width:110px">与日干宫关系</th></tr>
+      <tbody id="ysBody"></tbody>
+    </table>
+    <div class="legend" style="text-align:left;margin-top:8px">生克按<b>落宫地盘五行</b>横向比较：生日干/被日干生为吉（绿），克日干/日干克为凶（红），比和居中（黄）。旬空之宫标注灰标——落空亡则其事虚而不实，待冲空填实方应。</div>
+  </div>
+
+  <div class="card">
+    <h2>七、逐宫明细</h2>
+    <table>
+      <tr><th style="width:60px">宫位</th><th>八神</th><th>九星</th><th>八门</th><th>天盘</th><th>地盘</th><th>门宫关系</th></tr>
+      ${[1,2,3,4,5,6,7,8,9].map(p=>{
+        const d=R.door[p];
+        let rel='—';
+        if(d&&d!=='—'){
+          if(ke(DOOR_WX[d],PAL[p].wx))rel='门克宫 · 迫';
+          else if(ke(PAL[p].wx,DOOR_WX[d]))rel='宫克门 · 制';
+          else if(DOOR_WX[d]===PAL[p].wx)rel='比和';
+          else rel='相生';
+        }
+        const isGuest=p!==5&&R.guest&&p===R.guest.pal&&R.guest.gan!==R.tian[p];
+        const starCell=p===5?'天禽':(R.tianStar[p]+(isGuest?' <span style="color:#854F0B">·禽寄</span>':''));
+        return `<tr><td><b>${PAL[p].gua}${p}</b> ${PAL[p].dir}</td><td>${R.god[p]}</td><td>${starCell}</td>
+        <td>${d}</td><td><b>${R.tian[p]||''}</b>${isGuest?` <span style="color:#854F0B">(+${R.guest.gan}寄)</span>`:''}</td>
+        <td>${R.di[p]}</td><td>${rel}</td></tr>`;
+      }).join('')}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>八、中间量（供与其他排盘软件对照）</h2>
+    <table>
+      <tr><th>儒略日 UTC</th><td><code>${m.jdUTC?m.jdUTC.toFixed(5):'—'}</code>${m.jdAdj?` &nbsp; 修正后 <code>${m.jdAdj.toFixed(5)}</code>`:''}</td></tr>
+      <tr><th>日干支序</th><td>${m.dayIdx!==undefined?m.dayIdx:'—'}${m.dayGZ?`（${m.dayGZ}）`:''}</td></tr>
+      <tr><th>时干支序</th><td>${R.hourIdx}（${m.hourGZ}）</td></tr>
+      <tr><th>地盘布干</th><td>${[1,2,3,4,5,6,7,8,9].map(p=>`${p}宫${R.di[p]}`).join(' ')}</td></tr>
+      <tr><th>天盘旋转量</th><td>值符 ${PAL[R.zfPal].gua}${R.zfPal}宫${R.zfPal===5?'（禽随芮，自坤二起转）':''} → ${PAL[R.zfTo].gua}${R.zfTo}宫，顺时针移 <b>${R.shift}</b> 位</td></tr>
+      <tr><th>天禽寄宫</th><td>天芮所临 ${PAL[R.guest.pal].gua}${R.guest.pal}宫，中宫干 <b>${R.guest.gan}</b> 并显于该宫天盘</td></tr>
+      <tr><th>值使飞行</th><td>自 ${PAL[R.zsPal].gua}${R.zsPal}宫 ${R.forward?'顺':'逆'}飞 ${R.n-1} 步 → ${PAL[R.zsLuo].gua}${R.zsLuo}宫</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>九、算法依据与路线图</h2>
+    <div class="note">
+      <b>已实现</b>：真太阳时（经度+均时差）· 太阳视黄经求节气（精度约1分钟）· 拆补法定局（符头三元）· 地盘顺仪逆奇飞布 ·
+      值符加时干转盘 · 值使按时序洛书飞宫 · 八门随值使转宫 · 八神阳顺阴逆 · 天禽随芮、中宫干寄宫并显 · 旬空（空亡宫）· 日/年驿马 · 日干·时干落宫<br>
+      <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
+      <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示<br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 248 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / M4 流式 / Functions 服务端）全部通过<br><br>
+      <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
+      两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
+      非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级<br>
+      <b>待实现（M1 余项）</b>：置闰法（超神接气，即《烟波钓叟歌》"超神接气为准的"）· 飞盘派排法 · 年命入局（年干支已备表单、未参与盘局）—— 置闰法涉及流派争议，待《兵法奇门》第二部「用局研究」落地
+    </div>
+  </div>`;
+  document.getElementById('out').innerHTML=html;
+  if(curR&&curR.meta&&!curR.meta.test)renderYongshen(curR);
+}
+
+/* ---------- M4 AI 流式解读（界面层） ---------- */
+let aiHist=[],aiCtrl=null;
+const aiCfg=()=>({
+  mode:(document.getElementById('aiMode')?document.getElementById('aiMode').value:'auto'),
+  base:(document.getElementById('aiBase').value||'').trim(),
+  model:(document.getElementById('aiModel').value||'').trim(),
+  key:(document.getElementById('aiKey').value||'').trim()
+});
+/* 接入方式：auto 时按页面来源判定——线上（http/https）走服务端代理，本地双击（file://）走前端直连 */
+function aiMode(){
+  let m=document.getElementById('aiMode')?document.getElementById('aiMode').value:'auto';
+  if(m==='auto')m=(location.protocol==='http:'||location.protocol==='https:')?'server':'front';
+  return m;
+}
+function aiStatus(t,warn){
+  const el=document.getElementById('aiStatus');
+  el.style.display=t?'block':'none';
+  el.className='note'+(warn?' warn':'');
+  el.textContent=t;
+}
+function aiLoadCfg(){
+  const c=QMI.loadCfg();
+  if(!c)return;
+  if(c.mode&&document.getElementById('aiMode'))document.getElementById('aiMode').value=c.mode;
+  document.getElementById('aiBase').value=c.base||'';
+  document.getElementById('aiModel').value=c.model||'';
+  document.getElementById('aiKey').value=c.key||'';
+}
+function aiClearCfg(){
+  ['aiBase','aiModel','aiKey'].forEach(id=>document.getElementById(id).value='');
+  try{localStorage.removeItem(QMI.CFG_KEY);}catch(e){}
+  aiStatus('已清空本机保存的接口配置');
+}
+function aiClearHist(){
+  aiHist=[];
+  document.getElementById('aiOut').textContent='';
+  aiStatus('已清空对话，下次解读重新起一轮');
+}
+const aiCat=()=>document.getElementById('yCat')?document.getElementById('yCat').value:'qiucai';
+const aiQuestion=()=>(document.getElementById('aiQ').value||'').trim();
+function aiPan(withQ){
+  if(!curR||!curR.meta||curR.meta.test){
+    aiStatus('校验用局无四柱，AI 解读不可用：请先以真实日期时间起局',true);
+    return null;
+  }
+  const q=aiQuestion();
+  let pan=QMI.buildPanText(curR,aiCat());
+  if(!pan){aiStatus('当前盘面无法生成提示词',true);return null;}
+  if(withQ!==false&&q)pan+='\n【所问何事】'+q.slice(0,500);
+  return pan;
+}
+function aiPillars(){
+  try{
+    const py=YS.pillars(curR);
+    return py?[py.year,py.month,py.day,py.hour].join(' '):'';
+  }catch(e){return '';}
+}
+/* 服务端代理模式：POST /api/interpret，SSE 增量回传，用 QMI.parseSSEChunk 解析 */
+async function aiServerStream(pan,onDelta){
+  const c=aiCfg();
+  const body={pan:pan,cat:aiCat(),pillars:aiPillars(),question:aiQuestion().slice(0,500),history:aiHist.slice(-8)};
+  if(c.base&&c.model&&c.key){body.base=c.base;body.model=c.model;body.key=c.key;}
+  const init={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
+  if(aiCtrl)init.signal=aiCtrl.signal;
+  const resp=await fetch('/api/interpret',init);
+  if(!resp.ok){
+    let d='';try{d=String(await resp.text()).slice(0,300);}catch(e){}
+    let msg='HTTP_'+resp.status;
+    try{const j=JSON.parse(d);if(j&&j.error)msg=String(j.error);}catch(e){if(d)msg+=' '+d;}
+    const err=new Error(msg);err.status=resp.status;throw err;
+  }
+  const ct=String(resp.headers&&resp.headers.get?resp.headers.get('content-type'):'').toLowerCase();
+  if(ct.indexOf('text/event-stream')<0){
+    const j=await resp.json().catch(()=>null);
+    throw new Error((j&&j.error)||'服务端未返回流式响应');
+  }
+  const reader=resp.body.getReader();const dec=new TextDecoder();
+  let buf='',full='',cut=null;
+  while(true){
+    const r=await reader.read();
+    if(r.done)break;
+    buf+=dec.decode(r.value,{stream:true});
+    const before=full;
+    const st=QMI.parseSSEChunk(buf,full);
+    buf=st.buf;full=st.full;
+    if(st.cut){cut=st.cut;break;}
+    if(onDelta&&full.length>before.length)onDelta(full.slice(before.length));
+  }
+  if(cut){try{await reader.cancel();}catch(e){}}
+  if(!full&&!cut)throw new Error('EMPTY');
+  return full;
+}
+async function aiRun(){
+  const mode=aiMode();
+  const pan=aiPan(mode!=='server'); if(!pan)return; /* 服务端模式下问事单独传，不并进 pan */
+  const cfg=aiCfg();
+  if(mode==='front'&&(!cfg.base||!cfg.key||!cfg.model)){
+    aiStatus('请填写接口地址、模型、密钥三项，或把接入方式改为「服务端代理」',true);return;
+  }
+  QMI.saveCfg(cfg);
+  const out=document.getElementById('aiOut');
+  let acc=out.textContent||'';
+  if(acc)acc+='\n\n────────\n\n';
+  aiCtrl=(typeof AbortController==='function')?new AbortController():null;
+  aiStatus('连接中…（'+(mode==='server'?'服务端代理':'前端直连')+'）');
+  try{
+    const onDelta=d=>{acc+=d;out.textContent=acc;out.scrollTop=out.scrollHeight;};
+    let reply;
+    if(mode==='server')reply=await aiServerStream(pan,onDelta);
+    else reply=await QMI.interpretStream(cfg,pan,aiHist,onDelta,(url,init)=>{
+      if(aiCtrl)init=Object.assign({},init,{signal:aiCtrl.signal});
+      return fetch(url,init);
+    });
+    aiHist.push({role:'user',content:pan},{role:'assistant',content:reply});
+    aiStatus('完成 · 继续提问将沿用本盘（模型侧受「追问沿用原盘」约束）');
+  }catch(e){
+    const msg=e&&e.message?e.message:String(e);
+    if(aiCtrl&&aiCtrl.signal&&aiCtrl.signal.aborted)aiStatus('已停止',true);
+    else if(msg.indexOf('Failed to fetch')>=0||msg.indexOf('NetworkError')>=0||msg.indexOf('CORS')>=0)
+      aiStatus('解读失败：'+msg+' —— 多为 CORS 跨域（该接口不允许浏览器直调），可换支持跨域的接口或点「复制盘面提示词」',true);
+    else aiStatus('解读失败：'+msg,true);
+  }finally{aiCtrl=null;}
+}
+function aiStop(){
+  if(aiCtrl){aiCtrl.abort();aiCtrl=null;aiStatus('已停止',true);}
+  else aiStatus('当前没有进行中的请求',true);
+}
+function aiCopyFallback(txt){
+  const ta=document.createElement('textarea');
+  ta.value=txt;
+  document.body.appendChild(ta);
+  ta.select();
+  try{document.execCommand('copy');aiStatus('已复制系统提示词 + 盘面（'+txt.length+' 字），可粘贴到任意对话页求解');}
+  catch(e){aiStatus('复制失败，请手动选择文本（'+txt.length+' 字）',true);}
+  document.body.removeChild(ta);
+}
+function aiCopyPan(){
+  const pan=aiPan(); if(!pan)return Promise.resolve(null);
+  const txt=QMI.SYSTEM_PROMPT+'\n\n────────\n\n'+pan;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(txt).then(
+      ()=>{aiStatus('已复制系统提示词 + 盘面（'+txt.length+' 字），可粘贴到任意对话页求解');return txt;},
+      ()=>aiCopyFallback(txt));
+  }
+  return Promise.resolve(aiCopyFallback(txt));
+}
+
+/* ---------- 初始化 ---------- */
+(function init(){
+  const sel=document.getElementById('tGZ');
+  for(let i=0;i<60;i++){const o=document.createElement('option');o.value=i;o.textContent=gz(i);sel.appendChild(o);}
+  aiLoadCfg();
+  setNow();
+})();
+</script>
+</body>
+</html>

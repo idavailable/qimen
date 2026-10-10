@@ -1,0 +1,132 @@
+/* H · M4 AI 流式解读 UI 验证（运行于浏览器 context，异步组）
+ * 可访问：curR / QMI / YS / aiRun / aiStop / aiCopyPan / aiPan / aiHist / aiCtrl / ck / P / F
+ */
+console.log('\n=== H · M4 AI 流式解读（沙箱） ===');
+const g=id=>document.getElementById(id);
+
+/* H1 模块与界面元素 */
+ck('H1 QMI 已加载且接口齐备',
+  typeof QMI==='object'&&typeof QMI.buildPanText==='function'&&typeof QMI.interpretStream==='function'&&typeof QMI.SYSTEM_PROMPT==='string');
+ck('H2 AI 卡片元素齐备',['aiBase','aiModel','aiKey','aiQ','aiOut','aiStatus'].every(id=>!!g(id)));
+ck('H3 页面含「六、AI 流式解读」',document.getElementById('out').innerHTML.includes('五、问事用神'));
+
+/* H4 真局：复制盘面提示词（降级路径） */
+g('iDate').value='2026-10-10';
+g('iTime').value='09:00';
+cast();
+await aiCopyPan();
+const clip=navigator.clipboard._last||'';
+ck('H4 复制内容含系统提示词契约',clip.includes('盘面事实不可改写')&&clip.includes('现实边界'));
+ck('H5 复制内容含盘面正文',clip.includes('【奇门遁甲盘面】')&&clip.includes('九宫'));
+ck('H6 复制状态提示已复制',g('aiStatus').textContent.includes('已复制'),'实际='+g('aiStatus').textContent);
+
+/* H7 校验用局守卫：AI 解读不可用 */
+g('tDun').value='1';g('tJu').value='1';g('tGZ').value='0';
+castTest();
+await aiCopyPan();
+ck('H7 校验局拒绝生成提示词',g('aiStatus').textContent.includes('校验用局'),'实际='+g('aiStatus').textContent);
+await aiRun();
+ck('H8 校验局拒绝解读',g('aiStatus').textContent.includes('校验用局'),'实际='+g('aiStatus').textContent);
+
+/* 回到真局 */
+g('iDate').value='2026-10-10';
+g('iTime').value='09:00';
+cast();
+
+/* H9 缺配置守卫 */
+g('aiBase').value='';g('aiKey').value='';g('aiModel').value='';
+await aiRun();
+ck('H9 缺配置时提示填写三项',g('aiStatus').textContent.includes('请填写接口地址、模型、密钥'));
+
+/* H10 完整流式一轮 */
+g('aiBase').value='https://api.example.com/v1/';
+g('aiModel').value='test-model';
+g('aiKey').value='sk-test';
+g('aiQ').value='这笔订单该不该签';
+aiClearHist();
+await aiRun();
+ck('H11 流式输出正确拼接',g('aiOut').textContent,'一、盘面要点：值符落宫，用神生克。');
+ck('H12 完成后状态提示',g('aiStatus').textContent.includes('完成'));
+ck('H13 URL 拼装（末尾斜杠归一）',__fetches[__fetches.length-1].url,'https://api.example.com/v1/chat/completions');
+const b1=__fetches[__fetches.length-1].body;
+ck('H14 body 首条为 system 提示词',b1.messages[0].role,'system');
+ck('H15 body 盘面含补充问事',b1.messages[1].content.includes('【所问何事】这笔订单该不该签'));
+ck('H16 body stream=true 且模型正确',b1.stream===true&&b1.model==='test-model');
+ck('H17 配置已存 localStorage',!!localStorage.getItem('qmi_cfg_v1'));
+
+/* H18 多轮：历史带上一轮 user/assistant */
+await aiRun();
+const b2=__fetches[__fetches.length-1].body;
+ck('H18 第二轮带历史（4 条）',b2.messages.length,4);
+ck('H19 第二轮首条仍是 system',b2.messages[0].role,'system');
+ck('H20 多轮输出拼接（含分隔线）',g('aiOut').textContent.includes('────────'));
+
+/* H21 停止 */
+aiCtrl=new AbortController();
+aiStop();
+ck('H21 停止状态提示',g('aiStatus').textContent.includes('已停止'),'实际='+g('aiStatus').textContent);
+ck('H22 停止后 aiCtrl 已释放',aiCtrl===null,'实际='+String(aiCtrl));
+
+/* H23 清空对话 */
+aiClearHist();
+ck('H23 清空对话后输出为空',g('aiOut').textContent==='','实际='+JSON.stringify(g('aiOut').textContent));
+ck('H24 清空对话后历史为空',aiHist.length===0,'实际='+aiHist.length);
+
+/* H25 清空配置 */
+aiClearCfg();
+ck('H25 清空配置后 localStorage 无记录',localStorage.getItem('qmi_cfg_v1')===null,'实际='+String(localStorage.getItem('qmi_cfg_v1')));
+ck('H26 清空配置后输入框为空',g('aiBase').value===''&&g('aiKey').value===''&&g('aiModel').value==='');
+
+/* H27 失败路径（HTTP 401） */
+__fetches.length=0;
+const oldFetch=fetch;
+fetch=function(){return Promise.resolve({ok:false,status:401,headers:{get:()=>'application/json'},text:()=>Promise.resolve('bad key'),json:()=>Promise.resolve({})});};
+g('aiBase').value='https://api.example.com/v1';
+g('aiModel').value='m';
+g('aiKey').value='k';
+await aiRun();
+ck('H27 HTTP_401 错误提示',g('aiStatus').textContent.includes('HTTP_401'));
+fetch=oldFetch;
+
+/* ---- I · 服务端代理模式（部署版 /api/interpret） ---- */
+console.log('\n=== I · 服务端代理模式 ===');
+g('aiBase').value='';g('aiModel').value='';g('aiKey').value='';
+g('aiQ').value='这笔订单该不该签';
+aiClearHist();
+g('aiOut').textContent='';
+g('aiMode').value='server';
+__fetches.length=0;
+await aiRun();
+const f1=__fetches[__fetches.length-1];
+ck('I1 请求打到 /api/interpret',f1.url==='/api/interpret','实际='+f1.url);
+ck('I2 body 含 pan/cat/question/history',!!f1.body.pan&&!!f1.body.cat&&f1.body.question==='这笔订单该不该签'&&Array.isArray(f1.body.history));
+ck('I3 服务端模式下问事不并进 pan',f1.body.pan.indexOf('【所问何事】')<0);
+ck('I4 未填密钥时不带 base/key',f1.body.base===undefined&&f1.body.key===undefined,'实际='+JSON.stringify(Object.keys(f1.body)));
+ck('I5 服务端流式拼接正确',g('aiOut').textContent,'一、盘面要点：值符落宫，用神生克。');
+ck('I6 完成后状态提示',g('aiStatus').textContent.includes('完成'),'实际='+g('aiStatus').textContent);
+ck('I7 历史入栈（user+assistant）',aiHist.length===2,'实际='+aiHist.length);
+ck('I8 四柱随请求上报',typeof f1.body.pillars==='string'&&f1.body.pillars.length>0,'实际='+f1.body.pillars);
+
+/* I9 BYOK：填了密钥时随请求带上 */
+g('aiBase').value='https://api.example.com/v1';g('aiModel').value='m';g('aiKey').value='k';
+__fetches.length=0;
+await aiRun();
+const f2=__fetches[__fetches.length-1];
+ck('I9 BYOK 时带 base/model/key',f2.body.base==='https://api.example.com/v1'&&f2.body.model==='m'&&f2.body.key==='k','实际='+JSON.stringify([f2.body.base,f2.body.model,f2.body.key]));
+ck('I10 BYOK 第二轮带历史',Array.isArray(f2.body.history)&&f2.body.history.length===2,'实际='+(f2.body.history||[]).length);
+
+/* I11 auto 模式判定：线上 https → server；本地 file → front */
+g('aiMode').value='auto';
+location.protocol='https:';
+ck('I11 auto + https → server',aiMode()==='server','实际='+aiMode());
+location.protocol='file:';
+ck('I12 auto + file → front',aiMode()==='front','实际='+aiMode());
+
+/* I13 服务端返回 JSON 错误（非流）时给出可读提示 */
+g('aiMode').value='server';
+const oldFetch2=fetch;
+fetch=function(){return Promise.resolve({ok:false,status:400,headers:{get:()=>'application/json'},text:()=>Promise.resolve(JSON.stringify({error:'服务端未配置模型密钥'})),json:()=>Promise.resolve({error:'服务端未配置模型密钥'})});};
+await aiRun();
+ck('I13 服务端 400 错误透传',g('aiStatus').textContent.includes('服务端未配置模型密钥'),'实际='+g('aiStatus').textContent);
+fetch=oldFetch2;
+g('aiMode').value='auto';

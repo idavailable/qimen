@@ -1,0 +1,13 @@
+{
+  "name": "qimen",
+  "version": "1.0.0",
+  "private": true,
+  "description": "奇门遁甲决策工具 · 时家奇门转盘派拆补法定局 · 纯前端排盘 + Cloudflare Pages Functions 流式解读",
+  "scripts": {
+    "test": "node test.js",
+    "ui:verify": "node sandbox_ui_verify.js",
+    "deploy": "wrangler pages deploy public --project-name=qimen",
+    "db:init": "wrangler d1 execute qimen --file=schema.sql --remote",
+    "db:list": "wrangler d1 execute qimen --command=\"SELECT id,created_at,cat,model FROM readings ORDER BY id DESC LIMIT 20\" --remote"
+  }
+}

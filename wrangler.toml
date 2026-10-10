@@ -1,0 +1,31 @@
+name = "qimen"
+# 兼容日期必须是**已过去**的日期：填未来日期 Cloudflare 会直接拒绝部署。
+compatibility_date = "2026-10-09"
+# 部署根仅为 public/（index.html + engine.js + yongshen.js + prompt.js + interpret.js）。
+# 源码配置（wrangler.toml、schema.sql、test.js、functions 源码）一律留在仓库根，
+# 不作为静态资源上传公网。.assetsignore 对 Pages direct upload 无效（已实测），
+# 唯一可靠的隔离方式就是让这些文件不在部署目录内。
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "QM_DB"
+database_name = "qimen"
+database_id = "3271d406-a90c-406c-ad86-371b38989be6"
+
+[vars]
+# ---- 服务端默认模型（可选）----
+# 设置后，页面「服务端代理」模式无需用户填密钥即可解读：
+#   QM_BASE_URL  OpenAI 兼容端点，如 https://api.deepseek.com/v1
+#   QM_MODEL     模型名，如 deepseek-chat
+#   QM_API_KEY   **密钥**：用 secret 设置，不要写进本文件
+#     npx wrangler pages secret put QM_API_KEY --project-name=qimen
+# 未设置时，页面仍可用「前端直连」（用户自带 base/model/key，请求不经过本服务端）。
+#
+# ---- 访问口令（可选，默认不启用）----
+#   ACCESS_CODE  secret；设置后 /api/records 的清空操作需校验。当前未设 → 禁止清空。
+#
+# ---- 限流（软开关，默认关）----
+# 取消注释即启用，按访客 IP 每分钟上限（单 isolate 内计数，属削减而非根治）。
+# RATE_LIMIT_PER_MIN = "20"
+
+# 本地开发：npx wrangler pages dev public
