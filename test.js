@@ -295,6 +295,35 @@ console.log('\n=== 十八B、立春为界的干支年（F2 回归）===');
   ck('2026-02-10 四柱月=庚寅',YS.pillars(c).monthGZ,'庚寅');
   /* 年马星随干支年 */
   ck('2026-01-15 年马星按乙巳年',a.ma.year.zhi,QM.maXingZhi(QM.DZ.indexOf('巳')));
+  /* F21：元旦至小寒前，最近节气是**上一年冬至**，同样在立春之前 → 干支年仍归上一年。
+     旧版只判小寒/大寒，这段每年 4~5 天全线错一年（实测 2020–2030 逐年复现）。 */
+  for(const dd of [1,2,4]){
+    const r=QM.cast(2026,1,dd,12,0,{lon:120,clock:'true'});
+    ck(`2026-01-0${dd} 节气=冬至`,r.meta.term,'冬至');
+    ck(`2026-01-0${dd} 干支年归 2025`,r.meta.gzYear,2025);
+    ck(`2026-01-0${dd} 年干支=乙巳`,QM.gz(r.nian.idx),'乙巳');
+    ck(`2026-01-0${dd} 四柱年=乙巳`,YS.pillars(r).yearGZ,'乙巳');
+    ck(`2026-01-0${dd} 四柱月=戊子（乙年子月）`,YS.pillars(r).monthGZ,'戊子');
+    ck(`2026-01-0${dd} 年马星随乙巳=亥`,r.ma.year.zhi,'亥');
+  }
+  /* 立春当日及以后 → 当年（界点不能多退一年） */
+  const lc=QM.cast(2026,2,5,12,0,{lon:120,clock:'true'});
+  ck('2026-02-05 节气=立春',lc.meta.term,'立春');
+  ck('2026-02-05 干支年=2026',lc.meta.gzYear,2026);
+  /* 冬至（当年 12 月）仍属当年，不能被立春判定误退 */
+  const dz=QM.cast(2026,12,22,12,0,{lon:120,clock:'true'});
+  ck('2026-12-22 冬至仍属 2026 干支年',dz.meta.gzYear,2026);
+  ck('2026-12-22 年干支=丙午',QM.gz(dz.nian.idx),'丙午');
+  /* 逐年全扫：1/1–1/8 不得再有错年 */
+  let badYears=[];
+  for(let y=2020;y<=2030;y++){
+    for(let d=1;d<=8;d++){
+      const r=QM.cast(y,1,d,12,0,{lon:120,clock:'true'});
+      const beforeLiChun=(r.meta.jdUTC<r.meta.liChunJD);
+      if(beforeLiChun&&r.meta.gzYear!==y-1){badYears.push(`${y}-01-0${d}`);break;}
+    }
+  }
+  ck('2020–2030 每年 1/1–1/8 干支年无错',badYears.length===0,true,badYears.join('、'));
 }
 
 console.log('\n=== 十八C、节气判定与时间基准解耦（F8 回归）===');
@@ -746,6 +775,10 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('28.4 配密钥后 configured 全 true',mj.models.every(m=>m.configured===true),true);
   ck('28.5 配齐后无告警',(mj.warnings||[]).length,0);
   ck('28.6 defaultModel=deepseek-flash',mj.defaultModel,'deepseek-flash');
+  /* F27：只配了 Gemini 密钥时，defaultModel 不能仍指向未配 key 的 deepseek-flash */
+  mj=await (await fm.handle(mkReqM(),{GEMINI_API_KEY:'g'})).json();
+  ck('28.6b 仅配 Gemini → defaultModel 指向已配模型',/^gemini/i.test(mj.defaultModel),true,mj.defaultModel);
+  ck('28.6c 仅配 Gemini → deepseek-flash 标未配',mj.models.filter(m=>m.id==='deepseek-flash')[0].configured,false);
   mj=await (await fm.handle(mkReqM(),{CUSTOM_PROVIDERS:CP})).json();
   ck('28.7 自定义供应商进入清单',mj.models.some(m=>m.id==='kimi-k2'&&m.pv==='Moonshot'),true);
   ck('28.8 自定义供应商缺密钥 → 告警',(mj.warnings||[]).some(w=>w.indexOf('KIMI_API_KEY')>=0),true);

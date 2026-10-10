@@ -38,8 +38,11 @@ function pillars(R){
   const dayStem=m.dayGZ?m.dayGZ[0]:GAN[(m.dayIdx||0)%10];
   const hourStem=m.hourGZ?m.hourGZ[0]:GAN[0];
   // 年干：1984=甲子锚点
-  /* F2：干支年以立春为界——当前节气为小寒/大寒时立春未至，年干支（及五虎遁月干）归上一年 */
-  const gzY=(typeof m.gzYear==='number')?m.gzYear:((m.term==='小寒'||m.term==='大寒')?m.ly-1:m.ly);
+  /* F2 + F21：干支年以立春为界。优先用 engine 给出的 meta.gzYear；
+     兜底（老存档/无 meta）按立春真实时刻比较 jdUTC，再退化为「1 月或小寒/大寒 → 上一年」。 */
+  const gzY=(typeof m.gzYear==='number')?m.gzYear:
+    ((typeof m.jdUTC==='number'&&typeof m.liChunJD==='number')?(m.jdUTC>=m.liChunJD?m.ly:m.ly-1):
+     ((m.lm===1||m.term==='小寒'||m.term==='大寒')?m.ly-1:m.ly));
   const yIdx=QM.yearGZIndex(gzY);
   const yearStem=GAN[yIdx%10];
   // 月干：五虎遁（年上起月），节气→月数（寅=1…丑=12）

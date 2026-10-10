@@ -497,9 +497,14 @@ function cast(y,mo,d,h,mi,opts){
           term:cur.name,termJD:cur.jd,nextTerm:next?next.name:null,nextJD:next?next.jd:null,
           fuTou:gz(ft.idx),fuTouBack:ft.back,yuan,yuanName:YUAN_NAME[yuan]};
   // 年干支 / 空亡 / 驿马 / 落宫
-  /* F2：干支年以立春为界——小寒/大寒期间立春未至，年干支与年马星归上一年 */
-  const gzYear=(cur.name==='小寒'||cur.name==='大寒')?ly-1:ly;
+  /* F2 + F21：干支年以**立春真实时刻**为界（不是以「最近节气是否小寒/大寒」为界）。
+     元旦至小寒前这几天，最近节气是**上一年冬至**，同样在立春之前，年干支/月干支/年马星
+     必须归上一年；只判小寒/大寒会漏掉这段（每年 1/1–小寒前约 4~5 天全线错一年）。 */
+  const liChun=termsOfYear(ly).filter(t=>t.name==='立春')[0];
+  const liChunJD=liChun?liChun.jd:toJD(ly,2,4,0,0,0);
+  const gzYear=(jdUTC>=liChunJD)?ly:ly-1;
   R.meta.gzYear=gzYear;
+  R.meta.liChunJD=liChunJD;
   const yearIdx=yearGZIndex(gzYear);
   const dayXun=dayIdx-(dayIdx%10);
   const dayG=TG[dayIdx%10];

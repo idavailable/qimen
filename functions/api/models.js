@@ -44,12 +44,17 @@ async function handle(request, env) {
   const unkeyed = models.filter(m => !m.configured).map(m => m.id);
   if (unkeyed.length) warnings.push('以下模型未配置密钥（不可用）：' + unkeyed.join('、'));
 
+  /* F27：defaultModel 必须是**已配密钥**的模型，否则会指向一个必然 400 的 id
+     （例：只配了 GEMINI_API_KEY 而 QM_PROVIDER 未设 → 旧逻辑给出 deepseek-flash）。 */
+  const prefer = String(env.QM_PROVIDER || 'deepseek') === 'gemini'
+    ? (env.GEMINI_MODEL || 'gemini-3.8-flash')
+    : (env.DEEPSEEK_MODEL || 'deepseek-flash');
+  const configured = models.filter(m => m.configured).map(m => m.id);
+
   return L.json({
     models: models,
     warnings: warnings,
-    defaultModel: String(env.QM_PROVIDER || 'deepseek') === 'gemini'
-      ? (env.GEMINI_MODEL || 'gemini-3.8-flash')
-      : (env.DEEPSEEK_MODEL || 'deepseek-flash')
+    defaultModel: (configured.indexOf(prefer) >= 0) ? prefer : (configured[0] || prefer)
   });
 }
 
