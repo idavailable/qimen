@@ -409,11 +409,15 @@ function geju(R,dayGan){
   if(yDoor===8)push('凶','伏吟反吟',null,'八门反吟（全盘落对宫）');
   else if(yDoor>=4)push('中','伏吟反吟',null,`八门反吟 ${yDoor}/8 宫`);
 
-  /* ③ 三奇得使：天盘三奇所在之宫，其门恰为值使门 */
+  /* ③ 三奇得使（F16 收紧为传统组合）：天盘三奇加临本奇得使之仪——
+       乙奇得使加甲戌己/甲午辛；丙奇得使加甲子戊/甲申庚；丁奇得使加甲辰壬/甲寅癸。
+       （旧版只判「三奇+门==值使门」，非传统组合、命中率偏高，已废弃） */
+  const DESHI={'乙':['己','辛'],'丙':['戊','庚'],'丁':['壬','癸']};
   for(let p=1;p<=9;p++){
     if(p===5)continue;
-    if(SAN_QI.includes(R.tian[p])&&R.door[p]===R.zsDoor)
-      push('吉','三奇得使',p,`三奇得使（${R.tian[p]}奇+值使${R.zsDoor}于${pn(p)}）`);
+    const sky=R.tian[p];
+    if(DESHI[sky]&&DESHI[sky].indexOf(R.di[p])>=0)
+      push('吉','三奇得使',p,`三奇得使（${sky}奇加${R.di[p]}于${pn(p)}${R.door[p]===R.zsDoor?'，逢值使'+R.zsDoor:''}）`);
   }
 
   /* ④ 玉女守门：值使门所落之宫，地盘为丁奇 */
@@ -471,12 +475,14 @@ function cast(y,mo,d,h,mi,opts){
   const zhi=hourZhi(lh,lmi);
   const hourIdx=hourIdxOf(dayIdx%10,zhi);
 
-  // 节气（jdAdj 前最近一个）
+  // 节气（jdUTC 真实时刻前最近一个）
+  /* F8：判节气用真实时刻 jdUTC，不用修正后 jdAdj——否则经度/均时差修正会把交节时刻平移，
+     同盘仅切换「时间基准」就可能换局（实测 2026 年 2 例）。日柱/时柱仍按当地时间，节气按天文时刻。 */
   let list=[];
   for(const yy of [ly-1,ly,ly+1]) list=list.concat(termsOfYear(yy));
   list.sort((a,b)=>a.jd-b.jd);
   let cur=null,next=null;
-  for(const t of list){ if(t.jd<=jdAdj)cur=t; else if(!next)next=t; }
+  for(const t of list){ if(t.jd<=jdUTC)cur=t; else if(!next)next=t; }
 
   // 拆补定局
   const ft=findFuTou(dayIdx);
@@ -491,7 +497,10 @@ function cast(y,mo,d,h,mi,opts){
           term:cur.name,termJD:cur.jd,nextTerm:next?next.name:null,nextJD:next?next.jd:null,
           fuTou:gz(ft.idx),fuTouBack:ft.back,yuan,yuanName:YUAN_NAME[yuan]};
   // 年干支 / 空亡 / 驿马 / 落宫
-  const yearIdx=yearGZIndex(ly);
+  /* F2：干支年以立春为界——小寒/大寒期间立春未至，年干支与年马星归上一年 */
+  const gzYear=(cur.name==='小寒'||cur.name==='大寒')?ly-1:ly;
+  R.meta.gzYear=gzYear;
+  const yearIdx=yearGZIndex(gzYear);
   const dayXun=dayIdx-(dayIdx%10);
   const dayG=TG[dayIdx%10];
   const dayDun=dunGan(dayG,dayXun);

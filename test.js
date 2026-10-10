@@ -272,6 +272,43 @@ ck('1984 甲子年',QM.gz(QM.yearGZIndex(1984)),'甲子');
 ck('2026 年干支',QM.gz(QM.yearGZIndex(2026)),'丙午');
 ck('2025 年干支',QM.gz(QM.yearGZIndex(2025)),'乙巳');
 
+console.log('\n=== 十八B、立春为界的干支年（F2 回归）===');
+{
+  /* 立春前（小寒/大寒）：年/月干支归上一年 */
+  const a=QM.cast(2026,1,15,12,0,{lon:120,clock:'std'});   // 小寒
+  ck('2026-01-15 节气=小寒',a.meta.term,'小寒');
+  ck('2026-01-15 干支年归 2025',a.meta.gzYear,2025);
+  ck('2026-01-15 年干支=乙巳',QM.gz(a.nian.idx),'乙巳');
+  const pa=YS.pillars(a);
+  ck('2026-01-15 四柱年=乙巳',pa.yearGZ,'乙巳');
+  ck('2026-01-15 四柱月=己丑',pa.monthGZ,'己丑');
+  const b=QM.cast(2025,1,20,12,0,{lon:120,clock:'std'});   // 大寒
+  ck('2025-01-20 节气=大寒',b.meta.term,'大寒');
+  ck('2025-01-20 年干支=甲辰',QM.gz(b.nian.idx),'甲辰');
+  const pb=YS.pillars(b);
+  ck('2025-01-20 四柱月=丁丑',pb.monthGZ,'丁丑');
+  /* 立春后：归当年 */
+  const c=QM.cast(2026,2,10,12,0,{lon:120,clock:'std'});   // 立春后
+  ck('2026-02-10 节气=立春',c.meta.term,'立春');
+  ck('2026-02-10 干支年=2026',c.meta.gzYear,2026);
+  ck('2026-02-10 年干支=丙午',QM.gz(c.nian.idx),'丙午');
+  ck('2026-02-10 四柱月=庚寅',YS.pillars(c).monthGZ,'庚寅');
+  /* 年马星随干支年 */
+  ck('2026-01-15 年马星按乙巳年',a.ma.year.zhi,QM.maXingZhi(QM.DZ.indexOf('巳')));
+}
+
+console.log('\n=== 十八C、节气判定与时间基准解耦（F8 回归）===');
+{
+  /* 审计实测两例：旧版仅切换时间基准就换局；现判节气用真实时刻，三种基准必须同局 */
+  for(const [y,mo,d,h,mi] of [[2026,10,23,17,25],[2026,11,7,17,36]]){
+    const rs=['std','local','true'].map(cl=>QM.cast(y,mo,d,h,mi,{lon:120,clock:cl}));
+    ck(`${y}-${mo}-${d} ${h}:${mi} 三种基准节气一致`,rs[0].meta.term===rs[1].meta.term&&rs[1].meta.term===rs[2].meta.term,true,
+       rs.map(r=>r.meta.term).join('/'));
+    ck(`${y}-${mo}-${d} ${h}:${mi} 三种基准局数一致`,rs[0].ju===rs[1].ju&&rs[1].ju===rs[2].ju&&rs[0].dun===rs[2].dun,true,
+       rs.map(r=>(r.dun===1?'阳':'阴')+r.ju).join('/'));
+  }
+}
+
 console.log('\n=== 十九、甲遁六仪 ===');
 ck('甲子旬甲遁戊',QM.dunGan('甲',0),'戊');
 ck('甲午旬甲遁辛',QM.dunGan('甲',30),'辛');
@@ -548,20 +585,20 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('提示词含四段契约',SRV_PROMPT.includes('盘面事实不可改写')&&SRV_PROMPT.includes('主次次序')
      &&SRV_PROMPT.includes('追问沿用原盘')&&SRV_PROMPT.includes('现实边界'),true);
 
-  /* D1 存根（记录每条 SQL 及其绑定参数） */
+  /* D1 存根（记录每条 SQL 及其绑定参数；meta 对齐真实 D1：changes/last_row_id） */
   function fakeD1(){
     const log=[];
     return {log,prepare(sql){
       const rec={sql:sql,args:null};
       return {
         bind(...a){rec.args=a;return{
-          run:async()=>{log.push(rec);return{success:true};},
-          first:async()=>{log.push(rec);return{id:1,created_at:'t',cat:'qiucai',pillars:'',pan:'',question:'',answer:'',model:'m',ms:1};},
+          run:async()=>{log.push(rec);return{success:true,meta:{changes:1,last_row_id:1}};},
+          first:async()=>{log.push(rec);return{id:1,created_at:'t',cat:'qiucai',pillars:'',pan:'',question:'',answer:'',model:'m',ms:1,n:7};},
           all:async()=>{log.push(rec);return{results:[{id:1}]};}
         };},
         first:async()=>{log.push(rec);return{n:7};},
         all:async()=>{log.push(rec);return{results:[{id:1}]};},
-        run:async()=>{log.push(rec);return{success:true};}
+        run:async()=>{log.push(rec);return{success:true,meta:{changes:1,last_row_id:1}};}
       };
     }};
   }
@@ -669,6 +706,30 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   resp=await fi.handle(mkReq({pan:panTxt}),{QM_API_KEY:'k',QM_DB:fakeD1(),RATE_LIMIT_PER_MIN:'1'});
   ck('27.26 超限返回 429',resp.status===429,true);
 
+  /* 27.27 F15：history 中与本次相同的盘面全文被剔重（同盘只入模一次） */
+  globalThis.fetch=mockUpstream('sse');
+  resp=await fi.handle(mkReq({pan:panTxt,history:[{role:'user',content:panTxt},{role:'assistant',content:'旧答'},{role:'user',content:'追问'}]}),{QM_API_KEY:'k',QM_DB:fakeD1()});
+  await readSSE(resp);
+  ck('27.27 同一盘面仅入模一次',lastUp.body.messages.filter(m=>m.role==='user'&&m.content===panTxt).length,1);
+  ck('27.28 追问与旧答保留',lastUp.body.messages.some(m=>m.content==='追问')&&lastUp.body.messages.some(m=>m.content==='旧答'),true);
+
+  /* 27.29 F9：留痕写入挂 ctx.waitUntil（流关闭后 isolate 可能冻结） */
+  {
+    let waited=0;
+    const ctx={waitUntil(){waited++;}};
+    resp=await fi.handle(mkReq({pan:panTxt}),{QM_API_KEY:'k',QM_DB:fakeD1()},ctx);
+    await readSSE(resp);
+    await new Promise(r=>setTimeout(r,20)); /* recordReading 在 reader.cancel() 之后触发，让一拍 */
+    ck('27.29 waitUntil 被调用',waited>=1,true,String(waited));
+  }
+
+  /* 27.30 F5：records 默认按 ip_hash 过滤 */
+  {
+    const d=fakeD1();
+    await fr.handle(new Request('https://x/api/records?limit=5'),{QM_DB:d});
+    ck('27.30 records 默认按 ip_hash 过滤',/WHERE ip_hash=\?/.test(d.log.map(x=>x.sql).join('|')),true,d.log.map(x=>x.sql).join(' ; '));
+  }
+
   globalThis.fetch=origFetch;
 
   /* ---- 廿八、/api/models 与供应商路由（多模型对比） ---- */
@@ -711,6 +772,22 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('28.18 未指定模型 → 默认 deepseek',rp(env2,{}).from,'deepseek');
   ck('28.19 QM_PROVIDER=gemini 生效',rp({GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_PROVIDER:'gemini'},{}).from,'gemini');
   ck('28.20 BYOK 优先于服务端密钥',rp(env2,{base:'https://b/v1',model:'m',key:'k'}).from,'byok');
+
+  /* F3：回落到别家供应商时必须换用该家的模型名（旧版把 gemini 模型名发给 deepseek 必然 400） */
+  pv=rp({DEEPSEEK_API_KEY:'d'},{model:'gemini-3.8-flash'});
+  ck('28.24 回落 DeepSeek 模型名换本家',pv.from==='deepseek'&&pv.model==='deepseek-flash',true,JSON.stringify(pv));
+  pv=rp({GEMINI_API_KEY:'g'},{model:'deepseek-v4-pro'});
+  ck('28.25 回落 Gemini 模型名换本家',pv.from==='gemini'&&pv.model==='gemini-3.8-flash',true,JSON.stringify(pv));
+  pv=rp({DEEPSEEK_API_KEY:'d',DEEPSEEK_MODEL:'deepseek-v4-pro'},{model:'gemini-3.8-flash'});
+  ck('28.26 回落尊重 DEEPSEEK_MODEL 覆盖',pv.model,'deepseek-v4-pro');
+
+  /* F11：BYOK base SSRF 守卫（仅公网 http(s)，禁内网/回环/保留地址） */
+  ck('28.27 BYOK 禁内网 IP',rp({},{base:'http://192.168.1.1/v1',model:'m',key:'k'}).invalid,'byok_base');
+  ck('28.28 BYOK 禁回环 IP',rp({},{base:'http://127.0.0.1:11434/v1',model:'m',key:'k'}).invalid,'byok_base');
+  ck('28.29 BYOK 禁 localhost',rp({},{base:'http://localhost/v1',model:'m',key:'k'}).invalid,'byok_base');
+  ck('28.30 BYOK 禁非 http(s)',rp({},{base:'file:///etc/passwd',model:'m',key:'k'}).invalid,'byok_base');
+  ck('28.31 BYOK 禁 .internal 域',rp({},{base:'https://metadata.google.internal/v1',model:'m',key:'k'}).invalid,'byok_base');
+  ck('28.32 BYOK 公网 https 放行',rp({},{base:'https://api.example.com/v1',model:'m',key:'k'}).from,'byok');
 
   /* 端到端：按模型名打到正确上游端点 */
   globalThis.fetch=mockUpstream('sse');
@@ -760,6 +837,34 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('29.12 PUT → 405',r.status===405,true,String(r.status));
   r=await sv.handle(new Request('https://qimen.pages.dev/api/saves'),{});
   ck('29.13 未绑定 D1 → 500',r.status===500,true,String(r.status));
+
+  /* F17：时间须真实存在（旧正则放行 99:99） */
+  r=await sv.handle(mkReqS({params:{date:'2026-10-10',time:'99:99'}}),{QM_DB:fakeD1()});
+  ck('29.14 非法 time 99:99 → 400',r.status===400,true,String(r.status));
+  r=await sv.handle(mkReqS({params:{date:'2026-10-10',time:'23:59'}}),{QM_DB:fakeD1()});
+  ck('29.15 合法 time 23:59 放行',r.status===200,true,String(r.status));
+
+  /* F5：网络隔离——列表默认按 ip_hash 过滤；全量/越权需 ACCESS_CODE */
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?all=1'),{QM_DB:fakeD1()});
+  ck('29.16 all=1 未设口令 → 403',r.status===403,true,String(r.status));
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?all=1&code=bad'),{QM_DB:fakeD1(),ACCESS_CODE:'s3'});
+  ck('29.17 all=1 口令错 → 401',r.status===401,true,String(r.status));
+  {
+    const d=fakeD1();
+    r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?all=1&code=s3'),{QM_DB:d,ACCESS_CODE:'s3'});
+    ck('29.18 all=1 口令对 → 全量无 WHERE',r.status===200&&/SELECT id, created_at, label, pillars, params FROM saves ORDER BY/.test(d.log.map(x=>x.sql).join('|')),true,d.log.map(x=>x.sql).join(' ; '));
+  }
+  {
+    const d=fakeD1();
+    r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?limit=5'),{QM_DB:d});
+    ck('29.19 默认列表按 ip_hash 过滤',/FROM saves WHERE ip_hash=\?/.test(d.log.map(x=>x.sql).join('|')),true,d.log.map(x=>x.sql).join(' ; '));
+  }
+  {
+    /* 删除 0 行（他人存档）→ 404 */
+    const dNo={prepare(){return{bind(){return{run:async()=>({success:true,meta:{changes:0}})};}};}};
+    r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?id=9',{method:'DELETE'}),{QM_DB:dNo});
+    ck('29.20 删除非本网络存档 → 404',r.status===404,true,String(r.status));
+  }
 
   // 验证完毕输出小计
   console.log('\n=== 廿六 ~ 廿九节异步组执行完毕 ===');

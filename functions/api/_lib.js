@@ -3,8 +3,8 @@
    供 /api/interpret、/api/records 复用。
    ============================================================ */
 
-/* ---------- 入模规模上限（对齐 public/interpret.js LIMITS） ---------- */
-const LIMITS = { panText: 6000, historyTurns: 8, perMessage: 2000, question: 500 };
+/* ---------- 入模规模上限（F20：与 public/interpret.js LIMITS 口径统一） ---------- */
+const LIMITS = { panText: 4000, historyTurns: 8, perMessage: 2000, question: 500 };
 
 /* ---------- CORS ---------- */
 const ALLOW_ORIGIN = '*'; // 纯静态站点 + 无鉴权，允许任意来源；如需收紧改成指定域名
@@ -132,10 +132,31 @@ function customProviderWarnings(env) {
   return w;
 }
 function norm(base) { return String(base || '').replace(/\/+$/, ''); }
+/* F11：BYOK base 校验——仅公网 http(s)，禁回环/内网/保留地址，堵住借服务端 fetch 探测内网的 SSRF 面 */
+function byokBaseOk(base) {
+  try {
+    const u = new URL(String(base));
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    const h = u.hostname.toLowerCase();
+    if (h === 'localhost' || h === '::1' || h === '[::1]') return false;
+    if (h.endsWith('.internal') || h.endsWith('.local') || h.endsWith('.localhost') || h.endsWith('.lan')) return false;
+    const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (v4) {
+      const a = +v4[1], b = +v4[2];
+      if (a === 0 || a === 10 || a === 127) return false;
+      if (a === 172 && b >= 16 && b <= 31) return false;
+      if (a === 192 && b === 168) return false;
+      if (a === 169 && b === 254) return false;
+      if (a >= 224) return false; /* 组播/保留段 */
+    }
+    return true;
+  } catch (e) { return false; }
+}
 function resolveProvider(env, body) {
   env = env || {}; body = body || {};
   /* ① BYOK */
   if (body.base && body.key && body.model) {
+    if (!byokBaseOk(body.base)) return { invalid: 'byok_base' };
     return { base: norm(body.base), model: String(body.model), key: String(body.key), from: 'byok' };
   }
   const m = body.model ? String(body.model) : '';
@@ -159,23 +180,24 @@ function resolveProvider(env, body) {
     };
   }
   /* ④ 兜底：默认 provider → 任一已配 → 通用 QM_* */
+  /* F3：回落到别家供应商时必须换用该家的模型名——把 gemini 的模型名原样发给 deepseek 必然上游 400 */
   const def = String(env.QM_PROVIDER || 'deepseek').toLowerCase();
   if (def === 'gemini' && env.GEMINI_API_KEY) {
     return {
       base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),
-      model: env.GEMINI_MODEL || m || 'gemini-3.8-flash', key: env.GEMINI_API_KEY, from: 'gemini'
+      model: env.GEMINI_MODEL || (/^gemini/i.test(m) ? m : 'gemini-3.8-flash'), key: env.GEMINI_API_KEY, from: 'gemini'
     };
   }
   if (env.DEEPSEEK_API_KEY) {
     return {
       base: norm(env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'),
-      model: env.DEEPSEEK_MODEL || m || 'deepseek-flash', key: env.DEEPSEEK_API_KEY, from: 'deepseek'
+      model: env.DEEPSEEK_MODEL || (/^deepseek/i.test(m) ? m : 'deepseek-flash'), key: env.DEEPSEEK_API_KEY, from: 'deepseek'
     };
   }
   if (env.GEMINI_API_KEY) {
     return {
       base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),
-      model: env.GEMINI_MODEL || m || 'gemini-3.8-flash', key: env.GEMINI_API_KEY, from: 'gemini'
+      model: env.GEMINI_MODEL || (/^gemini/i.test(m) ? m : 'gemini-3.8-flash'), key: env.GEMINI_API_KEY, from: 'gemini'
     };
   }
   if (env.QM_API_KEY) {
@@ -225,3 +247,4 @@ export { customProviders };
 export { customKeyEnv };
 export { customProviderWarnings };
 export { resolveProvider };
+export { byokBaseOk };

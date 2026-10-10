@@ -25,8 +25,9 @@ functions/api/          ← Pages Functions（不进静态产物）
   records.js            D1 解读记录：列表 / 详情 / 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（248 项）
-sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（67 项）
+test.js                 回归测试（321 项）
+sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（93 项）
+_audit_dom.js           jsdom 真实 DOM 复核（8 项：换局类别/停止文案/换盘历史/芯片覆盖）
 schema.sql              D1 建表
 wrangler.toml           Pages 配置（含 D1 绑定）
 ```
@@ -71,14 +72,20 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `CUSTOM_PROVIDERS` | 文本变量 | JSON 数组，后台加供应商无需改代码：`[{"id":"kimi","label":"Moonshot","base":"https://api.moonshot.cn/v1","models":["kimi-k2"]}]`，密钥为 `<ID大写>_API_KEY` |
 | `QM_API_KEY` / `QM_BASE_URL` / `QM_MODEL` | secret / 变量 | 通用兜底（未走上面几家时使用） |
 | `RATE_LIMIT_PER_MIN` | 文本变量 | 每 IP 每分钟上限；**不设 = 不限流** |
-| `ACCESS_CODE` | secret | 仅用于 `/api/records?all=1` 清空校验；未设则禁止清空 |
+| `ACCESS_CODE` | secret | 管理口令：`/api/records`、`/api/saves` 的全量查询（`?all=1`）、越权删除、清空校验；未设则一律禁止 |
 
 模型清单由 `GET /api/models` 动态返回（按密钥是否配置标注可用性），前端渲染成**可多选的模型芯片**，
 选中几个就并行解读几个、横向对比。后台增删供应商/密钥后刷新页面即可，不用改代码。
 
 ## D1
 
-库名 `qimen`，单表 `readings`（id、时间、类别、四柱、盘面、问事、解读、模型、IP 哈希、耗时）。
+库名 `qimen`，两表：
+
+- `readings`（解读留痕：id、时间、类别、四柱、盘面、问事、解读、模型、IP 哈希、耗时）
+- `saves`（盘面存档：id、时间、标签、四柱、参数 JSON、IP 哈希）
+
+**网络隔离**：两张表的列表/详情/删除默认都按 `ip_hash` 过滤——仅同一网络可读写自己的数据，
+不再全站公开；全量查询与越权删除需 `ACCESS_CODE` 口令。
 
 ```bash
 npm run db:list   # 查最近 20 条
@@ -87,9 +94,20 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test          # 271 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + M4 + Functions + 供应商路由）
-npm run ui:verify # 75 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组）
+npm test          # 321 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由）
+npm run ui:verify # 93 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组）
+node _audit_dom.js # 8 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
 ```
+
+## 2026-10-10 全量审计修复（P1×6 + P2×7 + P3 若干，依据《审计报告-2026-10-10.md》）
+
+| 类别 | 修复 |
+|---|---|
+| 前端状态 | 换局保留问事类别（F1）· 换盘清空前端直连历史 aiHist（F4）· 停止按钮独立标志位、状态不再被「全部失败」覆盖（F6）· 服务端模式芯片不再被 byok 残留覆盖（F7）· 切换接入方式重拉模型清单（F13）· 经度 0 不再被吞成 120（F14） |
+| 算法 | **立春为界的干支年**：小寒/大寒期间年干支·月干支·年马星归上一年（F2，meta.gzYear）· 节气判定改用真实时刻 jdUTC，与「时间基准」解耦（F8）· 三奇得使收紧为传统组合（乙加己/辛、丙加戊/庚、丁加壬/癸）（F16） |
+| 服务端 | provider 回落换用本家模型名（F3）· **saves/records 按 ip_hash 网络隔离** + 管理口令 ACCESS_CODE（F5，顺带修复 hashIP 误传 request 对象）· D1 留痕挂 ctx.waitUntil（F9）· 限流覆盖 saves/records（F10）· BYOK base 仅公网 http(s)、禁内网回环（F11）· 追问历史中重复盘面剔重（F15）· 存档 time 校验收紧（F17）· panText 上限前后端统一 4000（F20） |
+
+已知遗留（P3，暂不修）：限流为单 isolate 内计数（F19，根治需 KV/D1 计数器）。
 
 ## 路线图
 

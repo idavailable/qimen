@@ -16,7 +16,13 @@ function pickProvider(env, body) {
   return L.resolveProvider(env, body);
 }
 
-async function handle(request, env) {
+/* F9：D1 留痕挂 ctx.waitUntil——流关闭后 isolate 可能被冻结，裸调用有丢写风险 */
+function recordReading(env, ctx, row) {
+  const p = L.saveReading(env, row);
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(p);
+}
+
+async function handle(request, env, ctx) {
   if (request.method === 'OPTIONS') return L.options();
 
   let body;
@@ -31,6 +37,7 @@ async function handle(request, env) {
   if (L.rateLimited(env, ip)) return L.errMsg('请求过于频繁，请稍后再试', 429);
 
   const prov = pickProvider(env, body);
+  if (prov && prov.invalid === 'byok_base') return L.errMsg('自带接口地址不合法：仅允许公网 http(s) 地址（禁内网/回环）', 400);
   if (!prov) return L.errMsg('服务端未配置模型密钥，且请求未携带 base/model/key', 400);
 
   const history = L.cleanHistory(body.history);
@@ -39,7 +46,9 @@ async function handle(request, env) {
   /* 系统提示词：以服务端为准（前端也传一份做兜底，取服务端 SYSTEM_PROMPT 常量） */
   const SYS = (env && env.QM_SYSTEM_PROMPT) || SYSTEM_PROMPT;
   const messages = [{ role: 'system', content: SYS }, { role: 'user', content: pan }];
-  history.forEach(m => messages.push(m));
+  /* F15：追问历史的 user 消息里夹着与本次完全相同的盘面全文（前端每轮都把 pan 入历史），
+     同一盘重复入模既多耗 token 又可能干扰——剔重，只留上方首轮那一份 */
+  history.forEach(m => { if (m.role === 'user' && m.content === pan) return; messages.push(m); });
   if (question) messages.push({ role: 'user', content: question });
 
   const t0 = Date.now();
@@ -75,7 +84,7 @@ async function handle(request, env) {
         ctrl.close();
       }
     });
-    L.saveReading(env, {
+    recordReading(env, ctx, {
       created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
       pan, question, answer: text.slice(0, 4000), model: prov.model, ipHash, ms: Date.now() - t0
     });
@@ -105,7 +114,7 @@ async function handle(request, env) {
         ctrl.enqueue(L.SSE_DONE);
         ctrl.close();
         try { await reader.cancel(); } catch (e) { }
-        L.saveReading(env, {
+        recordReading(env, ctx, {
           created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
           pan, question, answer: full.slice(0, 4000), model: prov.model, ipHash, ms: Date.now() - t0
         });
@@ -118,6 +127,6 @@ async function handle(request, env) {
 }
 
 /* ---- Pages Functions 路由（ESM 导出；CommonJS module.exports 不会被识别为路由） ---- */
-export async function onRequestPost(ctx) { return handle(ctx.request, ctx.env); }
+export async function onRequestPost(ctx) { return handle(ctx.request, ctx.env, ctx); }
 export async function onRequestOptions() { return L.options(); }
 export { handle };
