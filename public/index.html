@@ -113,6 +113,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
     <button class="ghost" onclick="savePan()">存档</button>
     <button class="ghost" onclick="toggleSaves()">读档</button>
   </div>
+  <div id="castMsg" class="note" style="display:none;margin-top:10px"></div>
   <div id="savesPanel" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:300px;overflow-y:auto;background:#fdfdfc">
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px">盘面存档（本地永久保存；线上额外存云端，按网络隔离——仅同一网络可读写，他人不可见）——点击条目即恢复盘面</div>
     <div id="savesList"></div>
@@ -222,6 +223,26 @@ function cast(){
   const R=QM.cast(Y,M,D,h0,m0,{lon,clock,ziSwap,jg});
   curR=R;
   render(R,R.meta);
+  /* 可见反馈：同输入再起局时盘面逐字相同（页面加载时也已自动起过一局），
+     没有任何提示会让人误以为「点了没反应」。这里每次都回一条摘要。 */
+  castMsg('已起局 · '+castSummary(R));
+}
+function castSummary(R){
+  const m=R.meta||{};
+  const p2=n=>String(n).padStart(2,'0');
+  let s=`${m.ly}-${p2(m.lm)}-${p2(m.ld)} ${p2(m.lh)}:${p2(m.lmi)}（${{std:'北京时间',local:'地方平太阳时',true:'真太阳时'}[m.clock]||''}）`;
+  s+=` · ${R.dun===1?'阳遁':'阴遁'}${R.ju}局 · ${m.term}${m.yuanName||''}`;
+  try{
+    const py=YS.pillars(R);
+    if(py&&py.yearGZ&&py.yearGZ!=='?')s+=` · ${py.yearGZ}年 ${py.monthGZ}月 ${py.dayGZ}日 ${py.hourGZ}时`;
+  }catch(e){}
+  return s;
+}
+function castMsg(t){
+  const el=document.getElementById('castMsg');
+  if(!el)return;
+  el.style.display=t?'block':'none';
+  el.textContent=t||'';
 }
 
 /* ---------- 存档 / 读档 ---------- */
