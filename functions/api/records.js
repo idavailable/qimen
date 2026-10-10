@@ -5,8 +5,7 @@
    DELETE ?id=123             → 删除单条
    DELETE ?all=1&code=xxx     → 清空（需 ACCESS_CODE 与环境变量一致；未设则禁止）
    ============================================================ */
-'use strict';
-const L = require('./_lib.js');
+import * as L from './_lib.js';
 
 const COLS_LIST = 'id, created_at, cat, pillars, question, model, ms';
 const COLS_FULL = 'id, created_at, cat, pillars, pan, question, answer, model, ms';
@@ -53,4 +52,6 @@ async function handle(request, env) {
   return L.errMsg('不支持的方法', 405);
 }
 
-module.exports = { onRequest: ctx => handle(ctx.request, ctx.env), handle };
+/* ---- Pages Functions 路由（ESM 导出） ---- */
+export async function onRequest(ctx) { return handle(ctx.request, ctx.env); }
+export { handle };

@@ -537,11 +537,12 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
 
   /* ---- 廿七、Cloudflare Pages Functions（服务端代理 + D1） ---- */
   console.log('\n=== 廿七、Functions 服务端（interpret/records） ===');
-  const L=require('./functions/api/_lib.js');
-  const fi=require('./functions/api/interpret.js');
-  const fr=require('./functions/api/records.js');
+  /* Functions 为 ESM（Pages Functions 只识别 export 形式的路由），故用动态 import */
+  const L=await import('./functions/api/_lib.js');
+  const fi=await import('./functions/api/interpret.js');
+  const fr=await import('./functions/api/records.js');
   const PUB_PROMPT=require('./public/prompt.js');
-  const SRV_PROMPT=require('./functions/api/prompt.js');
+  const SRV_PROMPT=(await import('./functions/api/prompt.js')).default;
 
   ck('提示词前后端同步',SRV_PROMPT===PUB_PROMPT,true);
   ck('提示词含四段契约',SRV_PROMPT.includes('盘面事实不可改写')&&SRV_PROMPT.includes('主次次序')

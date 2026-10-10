@@ -2,7 +2,6 @@
    奇门遁甲 · Cloudflare Pages Functions 公共库（_lib.js）
    供 /api/interpret、/api/records 复用。
    ============================================================ */
-'use strict';
 
 /* ---------- 入模规模上限（对齐 public/interpret.js LIMITS） ---------- */
 const LIMITS = { panText: 6000, historyTurns: 8, perMessage: 2000, question: 500 };
@@ -124,9 +123,20 @@ async function hashIP(ip) {
   } catch (e) { return 'na'; }
 }
 
-module.exports = {
-  LIMITS, cors, json, options,
-  sseHeaders, sseDelta, sseEvent, SSE_DONE, parseSSEChunk,
-  cleanHistory, errMsg, clientIP, rateLimited, saveReading, hashIP,
-  SSE_MAX_LINE, SSE_MAX_REPLY
-};
+export { LIMITS };
+export { cors };
+export { json };
+export { options };
+export { sseHeaders };
+export { sseDelta };
+export { sseEvent };
+export { SSE_DONE };
+export { parseSSEChunk };
+export { cleanHistory };
+export { errMsg };
+export { clientIP };
+export { rateLimited };
+export { saveReading };
+export { hashIP };
+export { SSE_MAX_LINE };
+export { SSE_MAX_REPLY };

@@ -5,8 +5,8 @@
      ② 自带密钥 BYOK：请求体带 base / model / key（中转站 CORS 受限时使用）
    统一以 SSE 增量回传（格式与前端 parseSSEChunk 兼容），完成后写 D1。
    ============================================================ */
-'use strict';
-const L = require('./_lib.js');
+import * as L from './_lib.js';
+import SYSTEM_PROMPT from './prompt.js';
 
 function pickProvider(env, body) {
   /* ① 服务端配置优先 */
@@ -46,7 +46,7 @@ async function handle(request, env) {
   const question = typeof body.question === 'string' ? body.question.slice(0, L.LIMITS.question) : '';
 
   /* 系统提示词：以服务端为准（前端也传一份做兜底，取服务端 SYSTEM_PROMPT 常量） */
-  const SYS = (env && env.QM_SYSTEM_PROMPT) || require('./prompt.js');
+  const SYS = (env && env.QM_SYSTEM_PROMPT) || SYSTEM_PROMPT;
   const messages = [{ role: 'system', content: SYS }, { role: 'user', content: pan }];
   history.forEach(m => messages.push(m));
   if (question) messages.push({ role: 'user', content: question });
@@ -126,4 +126,7 @@ async function handle(request, env) {
   return new Response(stream, { status: 200, headers: L.sseHeaders() });
 }
 
-module.exports = { onRequestPost: ctx => handle(ctx.request, ctx.env), onRequestOptions: () => L.options(), handle };
+/* ---- Pages Functions 路由（ESM 导出；CommonJS module.exports 不会被识别为路由） ---- */
+export async function onRequestPost(ctx) { return handle(ctx.request, ctx.env); }
+export async function onRequestOptions() { return L.options(); }
+export { handle };
