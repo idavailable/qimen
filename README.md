@@ -4,8 +4,11 @@
 纯前端排盘（双击 `public/index.html` 即可用，无网络请求），线上部署在 Cloudflare Pages，
 解读可选走 **服务端代理**（`/api/interpret`，密钥留服务端，解读写入 D1）。
 
-- 线上：<https://qimen.pages.dev>
+- 线上：<https://qimen-2i1.pages.dev>
 - 源码：<https://github.com/idavailable/qimen>
+
+> 若 `git push` 到 github.com:443 被网络阻断，可用 `node tools_push_github.mjs <TOKEN>`
+> 走 Git Data API（blob → tree → commit → PATCH ref）同步最近一次 commit。
 
 ## 目录结构
 
