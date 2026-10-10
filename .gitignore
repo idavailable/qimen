@@ -1,5 +1,7 @@
 node_modules/
 .wrangler/
 .dev.vars
+.git_push_files.txt
+.git_push_msg.txt
 *.log
 .DS_Store
