@@ -21,8 +21,9 @@ public/                 ← 部署根（pages_build_output_dir），只有这 5 
   interpret.js          M4 盘面→提示词 + SSE 流式读取
 functions/api/          ← Pages Functions（不进静态产物）
   interpret.js          流式解读代理（服务端密钥 / 自带密钥 BYOK）+ D1 留痕
+  models.js             模型清单（按密钥可用性标注，支持后台自定义供应商）
   records.js            D1 解读记录：列表 / 详情 / 删除
-  _lib.js               CORS、SSE、入参校验、限流、D1 写入
+  _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
 test.js                 回归测试（248 项）
 sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（67 项）
@@ -62,11 +63,18 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 
 | 变量 | 位置 | 说明 |
 |---|---|---|
-| `QM_API_KEY` | secret | 服务端默认模型密钥；未设则要求请求自带密钥 |
-| `QM_BASE_URL` | 文本变量 | OpenAI 兼容端点，如 `https://api.deepseek.com/v1` |
-| `QM_MODEL` | 文本变量 | 模型名，如 `deepseek-chat` |
+| `GEMINI_API_KEY` | secret | Google AI Studio 密钥；配了则 `gemini-*` 模型可用 |
+| `DEEPSEEK_API_KEY` | secret | DeepSeek 密钥；配了则 `deepseek-*` 模型可用 |
+| `GEMINI_BASE_URL` | 文本变量 | 默认 `https://generativelanguage.googleapis.com/v1beta/openai`；数据中心 IP 被拒时可改接 CF AI Gateway |
+| `DEEPSEEK_BASE_URL` | 文本变量 | 默认 `https://api.deepseek.com/v1` |
+| `QM_PROVIDER` | 文本变量 | 请求未指定模型时的默认供应商（`deepseek` / `gemini`） |
+| `CUSTOM_PROVIDERS` | 文本变量 | JSON 数组，后台加供应商无需改代码：`[{"id":"kimi","label":"Moonshot","base":"https://api.moonshot.cn/v1","models":["kimi-k2"]}]`，密钥为 `<ID大写>_API_KEY` |
+| `QM_API_KEY` / `QM_BASE_URL` / `QM_MODEL` | secret / 变量 | 通用兜底（未走上面几家时使用） |
 | `RATE_LIMIT_PER_MIN` | 文本变量 | 每 IP 每分钟上限；**不设 = 不限流** |
 | `ACCESS_CODE` | secret | 仅用于 `/api/records?all=1` 清空校验；未设则禁止清空 |
+
+模型清单由 `GET /api/models` 动态返回（按密钥是否配置标注可用性），前端渲染成**可多选的模型芯片**，
+选中几个就并行解读几个、横向对比。后台增删供应商/密钥后刷新页面即可，不用改代码。
 
 ## D1
 
@@ -79,8 +87,8 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test          # 248 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + M4 + Functions）
-npm run ui:verify # 67 项浏览器沙箱全流程（含服务端代理 I 组）
+npm test          # 271 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + M4 + Functions + 供应商路由）
+npm run ui:verify # 75 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组）
 ```
 
 ## 路线图
