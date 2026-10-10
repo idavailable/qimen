@@ -49,7 +49,11 @@ function pillars(R){
   const mNum=TM[m.term]||1;
   const yNum=yIdx%10;
   const mStem=GAN[((yNum%5)*2+2+(mNum-1))%10];
-  return{year:yearStem,month:mStem,day:dayStem,hour:hourStem};
+  /* 完整干支（存档标签等展示用；只加字段，不改动原有四干字段） */
+  const ZHI12=['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+  return{year:yearStem,month:mStem,day:dayStem,hour:hourStem,
+         yearGZ:QM.gz(yIdx),monthGZ:mStem+ZHI12[(mNum+1)%12],
+         dayGZ:m.dayGZ||'?',hourGZ:m.hourGZ||'?'};
 }
 
 /* 落宫盘面速写 */

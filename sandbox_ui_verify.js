@@ -17,7 +17,8 @@ const srcH=fs.readFileSync(path.join(dir,'_ui_verify_ai.js'),'utf8');
 function makeEl(id){return{id,value:'',innerHTML:'',textContent:'',children:[],scrollTop:0,scrollHeight:0,style:{},className:'',appendChild(c){this.children.push(c);},select(){},querySelectorAll(){return[];}};}
 const ids=['iDate','iTime','iLon','iClock','iZi','iJi','out','tDun','tJu','tGZ','yCat','ysBody','ysName','ysBrief',
            'aiMode','aiBase','aiModel','aiKey','aiQ','aiOut','aiStatus',
-           'modelChips','modelWarn','modelRow','byokRow'];
+           'modelChips','modelWarn','modelRow','byokRow',
+           'savesPanel','savesList'];
 const els={};ids.forEach(i=>els[i]=makeEl(i));
 els.iLon.value='120';els.iClock.value='true';els.iZi.value='23';els.iJi.value='2';
 els.tDun.value='1';els.tJu.value='1';els.tGZ.value='0';els.yCat.value='qiucai';
@@ -47,6 +48,7 @@ win.localStorage={
   removeItem(k){delete this._d[k];}
 };
 win.navigator={clipboard:{_last:null,writeText(t){this._last=String(t);return Promise.resolve();}}};
+win.scrollTo=()=>{}; /* loadSave 读档后回顶，沙箱无滚动 */
 /* location：默认模拟「本地双击打开」（file:）→ auto 判为前端直连；
    I 组会临时改成 https: 验证线上走服务端代理 */
 win.location={protocol:'file:',href:'file:///C:/qimen/public/index.html'};

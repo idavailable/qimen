@@ -110,6 +110,12 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
     </div>
     <button onclick="cast()">起局</button>
     <button class="ghost" onclick="setNow()">现在</button>
+    <button class="ghost" onclick="savePan()">存档</button>
+    <button class="ghost" onclick="toggleSaves()">读档</button>
+  </div>
+  <div id="savesPanel" style="display:none;margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:300px;overflow-y:auto;background:#fdfdfc">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">盘面存档（本地永久保存；线上额外存云端，跨设备可读）——点击条目即恢复盘面</div>
+    <div id="savesList"></div>
   </div>
   <div class="note warn">当前仅实现 <b>拆补法</b>（现代排盘软件主流，如元亨利贞默认）。<b>置闰法（超神接气）</b> 与 <b>飞盘派</b> 尚未实现，见文末路线图。中宫规则：<b>天禽恒随天芮</b>，中宫干寄于天芮所临之宫并显。</div>
 </div>
@@ -215,6 +221,119 @@ function cast(){
   const R=QM.cast(Y,M,D,h0,m0,{lon,clock,ziSwap,jg});
   curR=R;
   render(R,R.meta);
+}
+
+/* ---------- 存档 / 读档 ---------- */
+const SAVE_KEY='qm_saves_v1';
+const escHtml=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function saveParams(){
+  return {date:document.getElementById('iDate').value,time:document.getElementById('iTime').value,
+    lon:document.getElementById('iLon').value,clock:document.getElementById('iClock').value,
+    zi:document.getElementById('iZi').value,ji:document.getElementById('iJi').value,
+    cat:(document.getElementById('yCat')||{}).value||'qiucai',
+    q:(document.getElementById('aiQ')||{}).value||''};
+}
+function loadParams(p){
+  document.getElementById('iDate').value=p.date||'';
+  document.getElementById('iTime').value=p.time||'';
+  document.getElementById('iLon').value=p.lon||120;
+  document.getElementById('iClock').value=p.clock||'true';
+  document.getElementById('iZi').value=p.zi||'23';
+  document.getElementById('iJi').value=p.ji||'2';
+  if(document.getElementById('yCat')&&p.cat)document.getElementById('yCat').value=p.cat;
+  if(document.getElementById('aiQ'))document.getElementById('aiQ').value=p.q||'';
+}
+async function savePan(){
+  if(!curR||!curR.meta||curR.meta.test){alert('请先以真实日期时间起一局，再存档');return;}
+  const params=saveParams();
+  if(!params.date||!params.time){alert('请先以真实日期时间起一局，再存档');return;}
+  let label='';
+  try{const py=YS.pillars(curR);
+    if(py&&py.dayGZ&&py.dayGZ!=='?')label=py.yearGZ+'年 '+py.monthGZ+'月 '+py.dayGZ+'日 '+py.hourGZ+'时';
+  }catch(e){}
+  if(!label)label=aiPillars()||params.date+' '+params.time;
+  const item={id:'L'+Date.now(),created_at:new Date().toLocaleString('zh-CN',{hour12:false}),label,pillars:label,params,src:'local'};
+  let saves=[];try{saves=JSON.parse(localStorage.getItem(SAVE_KEY)||'[]');}catch(e){}
+  saves.unshift(item);saves=saves.slice(0,100);
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(saves));}catch(e){}
+  /* 线上环境：云端同步存档（失败不影响本地） */
+  const online=location.protocol==='https:'||location.protocol==='http:';
+  if(online){
+    try{
+      const r=await fetch('/api/saves',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({label:label.slice(0,60),pillars:label.slice(0,120),params})});
+      if(r.ok){const j=await r.json();item.cloudId=j.id;
+        try{localStorage.setItem(SAVE_KEY,JSON.stringify(saves));}catch(e){} /* cloudId 回写持久化 */
+      }
+    }catch(e){/* 云端失败仅本地 */}
+  }
+  toggleSaves(true);
+}
+function localSaves(){
+  try{return JSON.parse(localStorage.getItem(SAVE_KEY)||'[]');}catch(e){return [];}
+}
+async function cloudSaves(){
+  const online=location.protocol==='https:'||location.protocol==='http:';
+  if(!online)return [];
+  try{
+    const r=await fetch('/api/saves?limit=50');
+    if(!r.ok)return [];
+    const j=await r.json();
+    return (j.saves||[]).map(s=>({id:'C'+s.id,cloudId:s.id,created_at:s.created_at,label:s.label,pillars:s.pillars,params:s.params,src:'cloud'}));
+  }catch(e){return [];}
+}
+function toggleSaves(show){
+  const p=document.getElementById('savesPanel');
+  const open=show===true?true:show===false?false:p.style.display==='none';
+  p.style.display=open?'block':'none';
+  if(open)renderSaves();
+}
+async function renderSaves(){
+  const el=document.getElementById('savesList');
+  const local=localSaves();
+  el.innerHTML='<div style="font-size:12px;color:var(--muted)">加载云端存档…</div>';
+  const cloud=await cloudSaves();
+  /* 云端与本地按四柱+日期时间去重（同一局可能存过两边） */
+  const seen=new Set(),rows=[];
+  cloud.concat(local).forEach(s=>{
+    const k=(s.params&&s.params.date+' '+s.params.time+' '+s.params.lon+' '+s.params.ji)||s.id;
+    if(seen.has(k))return;seen.add(k);rows.push(s);
+  });
+  if(!rows.length){el.innerHTML='<div style="font-size:12px;color:var(--muted)">暂无存档 —— 起局后点「存档」即可保存</div>';return;}
+  el.innerHTML=rows.map(s=>{
+    const t=(YS.CATS&&YS.CATS[s.params&&s.params.cat]?YS.CATS[s.params.cat].name:'')||'';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid var(--line);font-size:12px">
+      <span style="cursor:pointer;flex:1" onclick="loadSave('${s.id}')" title="点击恢复盘面">
+        <b>${escHtml(s.label)}</b>
+        ${s.src==='cloud'?'<span class="chip zhong" style="margin:0 4px;position:static">云</span>':'<span class="chip zhong" style="margin:0 4px;position:static">本</span>'}
+        <span style="color:var(--muted)">${escHtml(t)}${s.params&&s.params.q?' · '+escHtml(s.params.q.slice(0,30)):''} · ${escHtml(s.created_at)}</span>
+      </span>
+      <button class="ghost" style="padding:1px 8px" onclick="delSave('${s.id}')">删</button>
+    </div>`;
+  }).join('');
+}
+async function loadSave(id){
+  let s=null;
+  if(id[0]==='L')s=localSaves().find(x=>x.id===id);
+  else{
+    const cs=await cloudSaves();
+    s=cs.find(x=>x.id===id);
+  }
+  if(!s||!s.params){alert('存档不存在或已删除');renderSaves();return;}
+  loadParams(s.params);
+  cast();
+  toggleSaves(false);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+async function delSave(id){
+  if(id[0]==='L'){
+    let saves=localSaves().filter(x=>x.id!==id);
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(saves));}catch(e){}
+  }else{
+    const cid=Number(id.slice(1));
+    try{await fetch('/api/saves?id='+cid,{method:'DELETE'});}catch(e){}
+  }
+  renderSaves();
 }
 
 function castTest(){

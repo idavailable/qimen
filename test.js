@@ -722,8 +722,47 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('28.23 端到端：deepseek-v4-pro 打到 DeepSeek',lastUp.url,'https://api.deepseek.com/v1/chat/completions');
   globalThis.fetch=origFetch;
 
+  /* ---- 廿九、/api/saves 存档接口 ---- */
+  console.log('\n=== 廿九、存档接口 /api/saves ===');
+  const sv=await import('./functions/api/saves.js');
+  const mkReqS=obj=>new Request('https://qimen.pages.dev/api/saves',obj===undefined?{method:'GET'}
+    :{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(obj)});
+
+  let d1s=fakeD1();
+  let r=await sv.handle(mkReqS({label:'丙午年 戊戌月 丁卯日 乙巳时',pillars:'丙午年 戊戌月 丁卯日 乙巳时',params:{date:'2026-10-10',time:'09:00',lon:'120',clock:'true',zi:'23',ji:'2',cat:'qiucai',q:'问财'}}),{QM_DB:d1s});
+  let j=await r.json();
+  ck('29.1 POST 合法存档 ok',j.ok===true,true,JSON.stringify(j));
+  const insRec=d1s.log[0];
+  ck('29.2 INSERT saves 五字段',/INSERT INTO saves/.test(insRec.sql)&&insRec.args.length===5,true,JSON.stringify(insRec&&{sql:insRec.sql,n:insRec.args.length}));
+  ck('29.3 params JSON 含白名单键',JSON.parse(insRec.args[3]).date==='2026-10-10'&&JSON.parse(insRec.args[3]).cat==='qiucai',true);
+  r=await sv.handle(mkReqS({label:'x'.repeat(100),params:{date:'2026-10-10',time:'09:00'}}),{QM_DB:d1s});
+  ck('29.4 label 超长截到 60',d1s.log[d1s.log.length-1].args[1].length===60,true,'实际='+d1s.log[d1s.log.length-1].args[1].length);
+  r=await sv.handle(mkReqS({params:{date:'2026-10-10',time:'09:00',evil:'<script>'}}),{QM_DB:d1s});
+  j=await r.json();
+  ck('29.5 非白名单键被剔除',j.ok===true&&JSON.parse(d1s.log[d1s.log.length-1].args[3]).evil===undefined,true,JSON.stringify(j));
+  r=await sv.handle(mkReqS({params:{date:'2026-10-10'}}),{QM_DB:fakeD1()});
+  ck('29.6 缺 time → 400',r.status===400,true,String(r.status));
+  r=await sv.handle(mkReqS({params:{date:'bad',time:'09:00'}}),{QM_DB:fakeD1()});
+  ck('29.7 非法 date → 400',r.status===400,true,String(r.status));
+  r=await sv.handle(mkReqS(null),{QM_DB:fakeD1()});
+  ck('29.8 无 params → 400',r.status===400,true,String(r.status));
+
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?limit=10'),{QM_DB:d1s});
+  j=await r.json();
+  ck('29.9 GET 列表结构（脏 params 置空不抛错）',Array.isArray(j.saves)&&j.saves.length>=1&&j.saves[0].params===null,true,JSON.stringify(j.saves&&j.saves[0]));
+
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?id=3',{method:'DELETE'}),{QM_DB:d1s});
+  j=await r.json();
+  ck('29.10 DELETE 返回 id',j.ok===true&&j.deleted===3,true,JSON.stringify(j));
+  ck('29.11 DELETE SQL 正确',/DELETE FROM saves WHERE id=\?/.test(d1s.log[d1s.log.length-1].sql),true,d1s.log[d1s.log.length-1].sql);
+
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves',{method:'PUT'}),{QM_DB:fakeD1()});
+  ck('29.12 PUT → 405',r.status===405,true,String(r.status));
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves'),{});
+  ck('29.13 未绑定 D1 → 500',r.status===500,true,String(r.status));
+
   // 验证完毕输出小计
-  console.log('\n=== 廿六 ~ 廿八节异步组执行完毕 ===');
+  console.log('\n=== 廿六 ~ 廿九节异步组执行完毕 ===');
   final();
 })();
 

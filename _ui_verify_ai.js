@@ -157,3 +157,90 @@ ck('I18 清单拉取失败给出可见告警',g('modelWarn').textContent.include
 fetch=oldF3;
 selModels=['gemini-3.8-flash','deepseek-flash'];
 g('aiMode').value='auto';
+
+/*  · 存档 / 读档 ================= */
+console.log('\n=== J · 存档读档 ===');
+location.protocol='file:';
+try{localStorage.removeItem('qm_saves_v1');}catch(e){}
+const jAlerts0=__alerts.length;
+
+/* J1 起真实局后存档 → 本地写入一条，label 为四柱 */
+setNow();
+cast();
+await savePan();
+let jSaves=localSaves();
+ck('J1 存档写入本地一条',jSaves.length===1,'实际='+jSaves.length);
+ck('J2 label 为四柱文本',/^[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]年/.test(jSaves[0].label),'实际='+jSaves[0].label);
+ck('J3 params 含起局全参数',!!jSaves[0].params.date&&!!jSaves[0].params.time&&jSaves[0].params.lon==='120'&&jSaves[0].params.clock==='true'&&jSaves[0].params.zi==='23'&&jSaves[0].params.ji==='2','实际='+JSON.stringify(jSaves[0].params));
+
+/* J4 file: 本地模式不请求云端 */
+const jFetch0=__fetches.length;
+await savePan();
+ck('J4 本地双击不碰云端',__fetches.length===jFetch0,'实际 fetch 增量='+(__fetches.length-jFetch0));
+
+/* J5 校验用局拒绝存档 */
+castTest();
+__alerts.length=0;
+await savePan();
+ck('J5 校验局存档被拦截',__alerts.length===1,'实际 alert='+(__alerts.length));
+cast();
+
+/* J6 线上模式存档 → POST /api/saves 带全参数 */
+location.protocol='https:';
+const jOldFetch=fetch;
+fetch=function(url,init){
+  __fetches.push({url:url,init:init,body:init&&init.body?JSON.parse(init.body):null});
+  if(String(url).indexOf('/api/saves')===0&&init&&init.method==='POST')
+    return Promise.resolve({ok:true,json:()=>Promise.resolve({ok:true,id:42})});
+  if(String(url).indexOf('/api/saves')===0&&(!init||!init.method||init.method==='GET'))
+    return Promise.resolve({ok:true,json:()=>Promise.resolve({saves:[
+      {id:42,created_at:'2026-10-10 13:00:00',label:'丙午年 戊戌月 丁卯日 乙巳时',pillars:'丙午年 戊戌月 丁卯日 乙巳时',params:{date:'2026-10-10',time:'10:00',lon:'120',clock:'true',zi:'23',ji:'2',cat:'hunyin',q:'婚事'}},
+      {id:7,created_at:'2026-10-09 09:00:00',label:'甲辰年 甲戌月 甲子日 甲子时',pillars:'甲辰年 甲戌月 甲子日 甲子时',params:{date:'2026-10-09',time:'00:30',lon:'116',clock:'std',zi:'0',ji:'8',cat:'tianqi',q:''}}
+    ],total:2})});
+  return jOldFetch(url,init);
+};
+__fetches.length=0;
+await savePan();
+const jPost=__fetches.find(f=>String(f.url).indexOf('/api/saves')===0&&f.init&&f.init.method==='POST');
+ck('J6 线上存档 POST /api/saves',!!jPost,'实际='+JSON.stringify(__fetches.map(f=>String(f.url))));
+ck('J7 POST body 带参数与四柱',!!jPost&&!!jPost.body.params.date&&!!jPost.body.label,'实际='+JSON.stringify(jPost&&jPost.body&&Object.keys(jPost.body)));
+ck('J8 云端成功后记录 cloudId',localSaves()[0].cloudId===42,'实际='+localSaves()[0].cloudId);
+
+/* J9 读档面板渲染：云端 + 本地合并、同局去重、云/本标记 */
+await renderSaves();
+const jHtml=g('savesList').innerHTML;
+ck('J9 面板含云端条目',jHtml.includes('婚事')&&jHtml.includes('甲子时'));
+ck('J10 云/本标记显示',jHtml.includes('>云<')&&jHtml.includes('>本<'));
+ck('J11 toggleSaves 开关',g('savesPanel').style.display==='block','实际='+g('savesPanel').style.display);
+
+/* J12 本地读档恢复表单并重排 */
+g('iDate').value='';g('iTime').value='';g('iLon').value='0';
+await loadSave(localSaves()[localSaves().length-1].id);
+ck('J12 读档恢复表单',g('iDate').value==='2026-10-10'&&g('iLon').value==='120','实际='+g('iDate').value+' / '+g('iLon').value);
+ck('J13 读档后盘面重排',g('out').innerHTML.includes('奇门遁甲')||g('out').innerHTML.length>100,'实际长度='+g('out').innerHTML.length);
+ck('J14 读档后面板收起',g('savesPanel').style.display==='none');
+
+/* J15 云端读档 */
+await loadSave('C42');
+ck('J15 云端读档恢复表单',g('iDate').value==='2026-10-10'&&g('iTime').value==='10:00','实际='+g('iDate').value+' '+g('iTime').value);
+
+/* J16 删除本地存档 */
+const jN0=localSaves().length;
+await delSave(localSaves()[0].id);
+ck('J16 删本地存档',localSaves().length===jN0-1,'实际 '+jN0+'→'+localSaves().length);
+
+/* J17 删除云端存档 → DELETE /api/saves?id= */
+__fetches.length=0;
+await delSave('C7');
+ck('J17 删云端存档发 DELETE',__fetches.some(f=>String(f.url).indexOf('/api/saves')===0&&f.init&&f.init.method==='DELETE'&&/id=7/.test(String(f.url))),'实际='+JSON.stringify(__fetches.map(f=>String(f.url))));
+fetch=jOldFetch;
+location.protocol='file:';
+
+/* J18 空存档提示 */
+try{localStorage.removeItem('qm_saves_v1');}catch(e){}
+const jOldF2=fetch;
+fetch=function(){return Promise.resolve({ok:true,json:()=>Promise.resolve({saves:[],total:0})});};
+await renderSaves();
+ck('J18 空存档给出提示',g('savesList').innerHTML.includes('暂无存档'));
+fetch=jOldF2;
+try{localStorage.removeItem('qm_saves_v1');}catch(e){}
