@@ -13,6 +13,14 @@ import * as L from './_lib.js';
 const PARAM_KEYS = ['date', 'time', 'lon', 'clock', 'zi', 'ji', 'cat', 'q'];
 const MAX_PARAMS = 2048;
 
+function validDate(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
 function cleanParams(p) {
   if (!p || typeof p !== 'object') return null;
   const o = {};
@@ -21,9 +29,15 @@ function cleanParams(p) {
     if (v === undefined || v === null || v === '') continue;
     o[k] = String(v).slice(0, 200);
   }
-  /* F17：时间须为真实存在的 HH:MM（旧正则放行 99:99） */
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(o.date || '') || !/^([01]\d|2[0-3]):[0-5]\d/.test(o.time || '')) return null;
+  /* F17：时间须为真实存在的日期与 HH:MM（旧正则放行 99:99/99-99） */
+  if (!validDate(o.date || '') || !/^([01]\d|2[0-3]):[0-5]\d$/.test(o.time || '')) return null;
   return o;
+}
+
+function parseId(id) {
+  const n = Number(id);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return null;
+  return n;
 }
 
 function isAdmin(env, sp) {
@@ -82,12 +96,14 @@ async function handle(request, env) {
   if (request.method === 'DELETE') {
     const id = sp.get('id');
     if (!id) return L.errMsg('缺少 id', 400);
+    const idNum = parseId(id);
+    if (idNum === null) return L.errMsg('id 须为正整数', 400);
     /* F5：单条删除仅限本网络自己的存档；管理口令可删任意条 */
     const rs = isAdmin(env, sp)
-      ? await env.QM_DB.prepare('DELETE FROM saves WHERE id=?').bind(Number(id)).run()
-      : await env.QM_DB.prepare('DELETE FROM saves WHERE id=? AND ip_hash=?').bind(Number(id), ipHash).run();
+      ? await env.QM_DB.prepare('DELETE FROM saves WHERE id=?').bind(idNum).run()
+      : await env.QM_DB.prepare('DELETE FROM saves WHERE id=? AND ip_hash=?').bind(idNum, ipHash).run();
     if (!(rs.meta && rs.meta.changes)) return L.errMsg('存档不存在或不属于本网络', 404);
-    return L.json({ ok: true, deleted: Number(id) });
+    return L.json({ ok: true, deleted: idNum });
   }
 
   return L.errMsg('不支持的方法', 405);

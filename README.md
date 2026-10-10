@@ -25,7 +25,7 @@ functions/api/          ← Pages Functions（不进静态产物）
   records.js            D1 解读记录：列表 / 详情 / 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（346 项）
+test.js                 回归测试（352 项）
 sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（93 项）
 _audit_dom.js           jsdom 真实 DOM 复核（8 项：换局类别/停止文案/换盘历史/芯片覆盖）
 schema.sql              D1 建表
@@ -94,7 +94,7 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test          # 346 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由）
+npm test          # 352 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由）
 npm run ui:verify # 93 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组）
 node _audit_dom.js # 8 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
 ```

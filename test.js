@@ -720,8 +720,17 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('27.20 records 列表返回',Array.isArray(j2.records)&&j2.total===7,true);
   r2=await fr.handle(new Request('https://x/api/records?id=3'),{QM_DB:db});
   ck('27.21 records 详情',(await r2.json()).record.id===1,true);
+
+  /* P3-5：非法 id 返回 400 */
+  r2=await fr.handle(new Request('https://x/api/records?id=abc'),{QM_DB:fakeD1()});
+  ck('27.21a records id=abc → 400',r2.status===400,true,String(r2.status));
+
   r2=await fr.handle(new Request('https://x/api/records?id=3',{method:'DELETE'}),{QM_DB:db});
   ck('27.22 records 删除单条',(await r2.json()).deleted===3,true);
+
+  r2=await fr.handle(new Request('https://x/api/records?id=abc',{method:'DELETE'}),{QM_DB:fakeD1()});
+  ck('27.22a records DELETE id=abc → 400',r2.status===400,true,String(r2.status));
+
   r2=await fr.handle(new Request('https://x/api/records?all=1&code=x',{method:'DELETE'}),{QM_DB:db});
   ck('27.23 未设 ACCESS_CODE 禁止清空',r2.status===403,true);
   r2=await fr.handle(new Request('https://x/api/records',{method:'PUT'}),{QM_DB:db});
@@ -866,6 +875,10 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('29.10 DELETE 返回 id',j.ok===true&&j.deleted===3,true,JSON.stringify(j));
   ck('29.11 DELETE SQL 正确',/DELETE FROM saves WHERE id=\?/.test(d1s.log[d1s.log.length-1].sql),true,d1s.log[d1s.log.length-1].sql);
 
+  /* P3-5：非法 id 返回 400（旧版 Number('abc')→NaN，D1 可能抛错） */
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?id=abc',{method:'DELETE'}),{QM_DB:fakeD1()});
+  ck('29.11a DELETE id=abc → 400',r.status===400,true,String(r.status));
+
   r=await sv.handle(new Request('https://qimen.pages.dev/api/saves',{method:'PUT'}),{QM_DB:fakeD1()});
   ck('29.12 PUT → 405',r.status===405,true,String(r.status));
   r=await sv.handle(new Request('https://qimen.pages.dev/api/saves'),{});
@@ -876,6 +889,14 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('29.14 非法 time 99:99 → 400',r.status===400,true,String(r.status));
   r=await sv.handle(mkReqS({params:{date:'2026-10-10',time:'23:59'}}),{QM_DB:fakeD1()});
   ck('29.15 合法 time 23:59 放行',r.status===200,true,String(r.status));
+
+  /* P3-1：日期也须真实存在（旧正则放行 2026-99-99） */
+  r=await sv.handle(mkReqS({params:{date:'2026-99-99',time:'12:00'}}),{QM_DB:fakeD1()});
+  ck('29.15a 非法 date 2026-99-99 → 400',r.status===400,true,String(r.status));
+  r=await sv.handle(mkReqS({params:{date:'2024-02-29',time:'12:00'}}),{QM_DB:fakeD1()});
+  ck('29.15b 闰日 2024-02-29 放行',r.status===200,true,String(r.status));
+  r=await sv.handle(mkReqS({params:{date:'2023-02-29',time:'12:00'}}),{QM_DB:fakeD1()});
+  ck('29.15c 非闰年 2023-02-29 → 400',r.status===400,true,String(r.status));
 
   /* F5：网络隔离——列表默认按 ip_hash 过滤；全量/越权需 ACCESS_CODE */
   r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?all=1'),{QM_DB:fakeD1()});

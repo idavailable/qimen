@@ -17,6 +17,12 @@ function isAdmin(env, q) {
   return !!(env && env.ACCESS_CODE && q.get('code') === env.ACCESS_CODE);
 }
 
+function parseId(id) {
+  const n = Number(id);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return null;
+  return n;
+}
+
 async function handle(request, env) {
   const url = new URL(request.url);
   const q = url.searchParams;
@@ -35,10 +41,12 @@ async function handle(request, env) {
     if (all && !isAdmin(env, q)) return L.errMsg('口令错误', 401);
     const id = q.get('id');
     if (id) {
+      const idNum = parseId(id);
+      if (idNum === null) return L.errMsg('id 须为正整数', 400);
       /* F5：单条详情也按网络隔离（含 question/answer 原文） */
       const row = isAdmin(env, q)
-        ? await env.QM_DB.prepare('SELECT ' + COLS_FULL + ' FROM readings WHERE id=?').bind(Number(id)).first()
-        : await env.QM_DB.prepare('SELECT ' + COLS_FULL + ' FROM readings WHERE id=? AND ip_hash=?').bind(Number(id), ipHash).first();
+        ? await env.QM_DB.prepare('SELECT ' + COLS_FULL + ' FROM readings WHERE id=?').bind(idNum).first()
+        : await env.QM_DB.prepare('SELECT ' + COLS_FULL + ' FROM readings WHERE id=? AND ip_hash=?').bind(idNum, ipHash).first();
       if (!row) return L.errMsg('记录不存在', 404);
       return L.json({ record: row });
     }
@@ -61,12 +69,14 @@ async function handle(request, env) {
   if (request.method === 'DELETE') {
     const id = q.get('id');
     if (id) {
+      const idNum = parseId(id);
+      if (idNum === null) return L.errMsg('id 须为正整数', 400);
       /* F5：单条删除仅限本网络；管理口令可删任意条 */
       const rs = isAdmin(env, q)
-        ? await env.QM_DB.prepare('DELETE FROM readings WHERE id=?').bind(Number(id)).run()
-        : await env.QM_DB.prepare('DELETE FROM readings WHERE id=? AND ip_hash=?').bind(Number(id), ipHash).run();
+        ? await env.QM_DB.prepare('DELETE FROM readings WHERE id=?').bind(idNum).run()
+        : await env.QM_DB.prepare('DELETE FROM readings WHERE id=? AND ip_hash=?').bind(idNum, ipHash).run();
       if (!(rs.meta && rs.meta.changes)) return L.errMsg('记录不存在或不属于本网络', 404);
-      return L.json({ ok: true, deleted: Number(id) });
+      return L.json({ ok: true, deleted: idNum });
     }
     if (q.get('all')) {
       const code = env.ACCESS_CODE;
