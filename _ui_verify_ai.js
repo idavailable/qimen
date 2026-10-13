@@ -213,10 +213,11 @@ ck('J9 面板含云端条目',jHtml.includes('婚事')&&jHtml.includes('甲子�
 ck('J10 云/本标记显示',jHtml.includes('>云<')&&jHtml.includes('>本<'));
 ck('J11 toggleSaves 开关',g('savesPanel').style.display==='block','实际='+g('savesPanel').style.display);
 
-/* J12 本地读档恢复表单并重排 */
+/* J12 本地读档恢复表单并重排（日期断言随存档值走，不硬编码写作当天日期） */
 g('iDate').value='';g('iTime').value='';g('iLon').value='0';
-await loadSave(localSaves()[localSaves().length-1].id);
-ck('J12 读档恢复表单',g('iDate').value==='2026-10-10'&&g('iLon').value==='120','实际='+g('iDate').value+' / '+g('iLon').value);
+const j12save=localSaves()[localSaves().length-1];
+await loadSave(j12save.id);
+ck('J12 读档恢复表单',g('iDate').value===j12save.params.date&&g('iLon').value==='120','实际='+g('iDate').value+' / '+g('iLon').value+'，期望 date='+j12save.params.date);
 ck('J13 读档后盘面重排',g('out').innerHTML.includes('奇门遁甲')||g('out').innerHTML.length>100,'实际长度='+g('out').innerHTML.length);
 ck('J14 读档后面板收起',g('savesPanel').style.display==='none');
 

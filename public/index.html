@@ -756,7 +756,9 @@ async function aiServerStream(pan,model,history,onDelta){
     if(st.cut){cut=st.cut;break;}
     if(onDelta&&full.length>before.length)onDelta(full.slice(before.length));
   }
-  if(cut){try{await reader.cancel();}catch(e){}}
+  if(cut){try{await reader.cancel();}catch(e){}
+    /* 四轮审计：服务端 warn 事件被 parseSSEChunk 丢弃，截断须在此自行补一条可见提示 */
+    if(onDelta)onDelta('\n\n〔回复过长已截断（'+cut+'），可追问「继续」〕');}
   if(!full&&!cut)throw new Error('EMPTY');
   return full;
 }

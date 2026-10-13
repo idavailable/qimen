@@ -15,6 +15,7 @@ const BUILTIN = [
 
 async function handle(request, env) {
   if (request.method === 'OPTIONS') return L.options();
+  if (request.method !== 'GET') return L.errMsg('不支持的方法，仅 GET', 405);
   env = env || {};
 
   const geminiKeyed = !!env.GEMINI_API_KEY;
