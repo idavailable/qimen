@@ -10,7 +10,7 @@
 
    版本号：改动静态资源清单时递增 CACHE，activate 里按白名单清旧缓存。
    ============================================================ */
-const CACHE = 'qimen-v1';
+const CACHE = 'qimen-v2';
 const ASSETS = [
   './',
   './index.html',

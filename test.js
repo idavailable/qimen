@@ -1012,8 +1012,30 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   ck('提示词含四段契约',SRV_PROMPT.includes('盘面事实不可改写')&&SRV_PROMPT.includes('主次次序')
      &&SRV_PROMPT.includes('追问沿用原盘')&&SRV_PROMPT.includes('现实边界'),true);
 
-  /* D1 存根（记录每条 SQL 及其绑定参数；meta 对齐真实 D1：changes/last_row_id） */
-  function fakeD1(){
+  /* ---- 四轮审计 P2-1：CORS 白名单（'*' → echo 白名单 + null） ---- */
+  console.log('\n=== 四轮 P2-1 CORS 白名单 ===');
+  {
+    const mkReq=o=>({headers:{get:k=>k.toLowerCase()==='origin'?o:null}});
+    const mkResp=()=>new Response('x',{status:200,headers:{'Content-Type':'text/plain'}});
+    const hd=(r,k)=>r.headers.get(k);
+    const a1=L.route(mkReq('https://qimen-2i1.pages.dev'),mkResp());
+    ck('32.91 pages.dev 域名回显自身',hd(a1,'Access-Control-Allow-Origin'),'https://qimen-2i1.pages.dev');
+    const a2=L.route(mkReq('https://qimen.dhxlsfn.dpdns.org'),mkResp());
+    ck('32.92 自定义域回显自身',hd(a2,'Access-Control-Allow-Origin'),'https://qimen.dhxlsfn.dpdns.org');
+    const a3=L.route(mkReq('null'),mkResp());
+    ck('32.93 放行 null（file:// 本地模式不被误杀）',hd(a3,'Access-Control-Allow-Origin'),'null');
+    const b1=L.route(mkReq('https://evil.example.com'),mkResp());
+    ck('32.94 未知来源不回 ACAO',hd(b1,'Access-Control-Allow-Origin'),null);
+    const b2=L.route(mkReq(null),mkResp());
+    ck('32.95 无 Origin 头不回 ACAO',hd(b2,'Access-Control-Allow-Origin'),null);
+    const v1=L.route(mkReq('https://qimen-2i1.pages.dev'),mkResp());
+    ck('32.96 回显时带 Vary: Origin',hd(v1,'Vary'),'Origin');
+    const s1=L.route(mkReq('https://qimen-2i1.pages.dev'),new Response('data: x\n\n',{status:200,headers:L.sseHeaders()}));
+    ck('32.97 对流式 SSE 响应同样生效',hd(s1,'Access-Control-Allow-Origin'),'https://qimen-2i1.pages.dev');
+    ck('32.98 裸 cors() 不再吐 ACAO（漏包 route 也不泄露）',L.cors()['Access-Control-Allow-Origin']||null,null);
+  }
+
+  /* D1 存根（记录每条 SQL 及其绑定参数；meta 对齐真实 D1：changes/last_row_id） */  function fakeD1(){
     const log=[];
     return {log,prepare(sql){
       const rec={sql:sql,args:null};

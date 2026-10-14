@@ -218,7 +218,7 @@ async function handle(request, env, ctx) {
 }
 
 /* ---- Pages Functions 路由（ESM 导出；CommonJS module.exports 不会被识别为路由） ---- */
-export async function onRequestPost(ctx) { return handle(ctx.request, ctx.env, ctx); }
-export async function onRequestOptions() { return L.options(); }
+export async function onRequestPost(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env, ctx)); }
+export async function onRequestOptions(ctx) { return L.route(ctx.request, L.options()); }
 export { handle };
 export { retriable, shouldRetry, isGeminiProv, RETRY_TIMES, RETRY_WAIT_MS };

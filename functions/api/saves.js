@@ -111,5 +111,5 @@ async function handle(request, env) {
 }
 
 /* ---- Pages Functions 路由（ESM 导出） ---- */
-export async function onRequest(ctx) { return handle(ctx.request, ctx.env); }
+export async function onRequest(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env)); }
 export { handle };

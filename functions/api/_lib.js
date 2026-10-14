@@ -6,21 +6,45 @@
 /* ---------- 入模规模上限（F20：与 public/interpret.js LIMITS 口径统一） ---------- */
 const LIMITS = { panText: 4000, historyTurns: 8, perMessage: 2000, question: 500 };
 
-/* ---------- CORS ---------- */
-const ALLOW_ORIGIN = '*'; // 纯静态站点 + 无鉴权，允许任意来源；如需收紧改成指定域名
+/* ---------- CORS ----------
+   四轮审计 P2-1：原为 '*'，任意站点都能调服务端代理烧密钥额度。
+   收紧为白名单 echo（含 'null'——本地双击 file:// 打开的页面 Origin 即为 null，
+   不放行会把本地用户的服务端代理模式打挂）；未知来源不回 CORS 头（浏览器拦截）。 */
+const CORS_ORIGINS = ['https://qimen-2i1.pages.dev', 'https://qimen.dhxlsfn.dpdns.org', 'null'];
 function cors(extra) {
-  return Object.assign({
-    'Access-Control-Allow-Origin': ALLOW_ORIGIN,
+  const h = {
     'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type,X-Access-Code',
-    'Access-Control-Max-Age': '86400'
-  }, extra || {});
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin'
+  };
+  return Object.assign(h, extra || {});
+}
+/* 按请求 Origin 回 CORS 头；未知来源一律不回（等价于浏览器侧拒绝） */
+function corsWith(req, extra) {
+  let o = null;
+  try { o = req && req.headers && req.headers.get ? req.headers.get('Origin') : null; } catch (e) { o = null; }
+  if (o && CORS_ORIGINS.indexOf(o) >= 0) return cors(Object.assign({ 'Access-Control-Allow-Origin': o }, extra || {}));
+  return cors(extra);
 }
 function json(data, status) {
   return new Response(JSON.stringify(data), {
     status: status || 200,
     headers: cors({ 'Content-Type': 'application/json; charset=utf-8' })
   });
+}
+/* 集中出口：按请求 Origin 回显 CORS 头（白名单见 CORS_ORIGINS）。
+   在各 API 的 onRequest* 出口包一层即可，内部（含流式 SSE）无需逐个改。 */
+function route(req, resp) {
+  let o = null;
+  try { o = req && req.headers && req.headers.get ? req.headers.get('Origin') : null; } catch (e) { o = null; }
+  if (!o || CORS_ORIGINS.indexOf(o) < 0) return resp;
+  try {
+    const h = new Headers(resp.headers);
+    h.set('Access-Control-Allow-Origin', o);
+    if (h.get('Vary') === null) h.set('Vary', 'Origin');
+    return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: h });
+  } catch (e) { return resp; }
 }
 function options() { return new Response(null, { status: 204, headers: cors() }); }
 
@@ -306,6 +330,7 @@ async function hashIP(ip) {
 }
 
 export { LIMITS };
+export { route };
 export { cors };
 export { json };
 export { options };
