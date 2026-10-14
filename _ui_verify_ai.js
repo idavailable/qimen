@@ -342,3 +342,80 @@ ck('K11 正常收流不误报截断',aiColBody('gemini-3.8-flash').textContent==
 fetch=oldFetchK;
 selModels=['gemini-3.8-flash','deepseek-flash'];
 g('aiMode').value='auto';
+
+/* · L 组：跨设备读档（管理口令入口） ================= */
+{
+  const savedFetchL=fetch;
+  const calls=[];
+  fetch=function(url,init){
+    calls.push({url:String(url),init:init});
+    /* 全量查询：服务端按 code 校验；模拟「口令正确 → 返回含一条跨网络存档」 */
+    if(String(url).indexOf('all=1')>=0&&String(url).indexOf('code=secret')>=0)
+      return Promise.resolve({ok:true,json:()=>Promise.resolve({saves:[
+        {id:99,created_at:'2026-10-11 08:00:00',label:'跨网络存档',pillars:'跨网络存档',
+         params:{date:'2026-10-11',time:'08:00',lon:'118',clock:'local',zi:'0',ji:'8',cat:'tianqi',q:''}}
+      ],total:1})});
+    if(String(url).indexOf('all=1')>=0)
+      return Promise.resolve({ok:false,status:401,json:()=>Promise.resolve({error:'口令错误'})});
+    return Promise.resolve({ok:true,json:()=>Promise.resolve({saves:[],total:0})});
+  };
+  location.protocol='https:';
+
+  /* L1 未勾选时仍只查本网络（回归：默认行为不变） */
+  g('savesCode').value='';g('savesAll').checked=false;calls.length=0;
+  await renderSaves();
+  ck('L1 默认只查本网络（不带 all/code）',
+     calls.length===1&&calls[0].url.indexOf('all=1')<0&&calls[0].url.indexOf('code=')<0,
+     '实际='+JSON.stringify(calls.map(c=>c.url)));
+
+  /* L2 勾选 + 口令 → 走全量查询 */
+  g('savesCode').value='secret';g('savesAll').checked=true;calls.length=0;
+  await renderSaves();
+  ck('L2 勾选+口令走全量查询（all=1&code=）',
+     calls.length===1&&calls[0].url.indexOf('all=1')>=0&&calls[0].url.indexOf('code=secret')>=0,
+     '实际='+JSON.stringify(calls.map(c=>c.url)));
+  ck('L3 跨网络存档进入列表',g('savesList').innerHTML.indexOf('跨网络存档')>=0,
+     '实际='+g('savesList').innerHTML.slice(0,80));
+  ck('L3b 面板提示全量条数',g('savesMsg').textContent.indexOf('全量云端存档')>=0,'实际='+g('savesMsg').textContent);
+  ck('L4 口令写入 localStorage（下次免重打）',localStorage.getItem('qm_code_v1')==='secret','实际='+localStorage.getItem('qm_code_v1'));
+
+  /* L5 全量列表里的条目可直接读档（不再回头拉默认列表） */
+  g('iDate').value='';g('iTime').value='';
+  await loadSave('C99');
+  ck('L5 跨网络条目可直接读档',g('iDate').value==='2026-10-11'&&g('iTime').value==='08:00',
+     '实际='+g('iDate').value+' '+g('iTime').value);
+
+  /* L6 口令错误 → 面板显示服务端原话，不静默当「暂无存档」 */
+  g('savesCode').value='wrong';g('savesAll').checked=true;calls.length=0;
+  await renderSaves();
+  ck('L6 口令错误提示服务端原话',g('savesMsg').textContent.indexOf('口令错误')>=0,'实际='+g('savesMsg').textContent);
+
+  /* L7 删跨网络存档要带口令（本网络存档不带） */
+  g('savesCode').value='secret';calls.length=0;
+  await renderSaves();
+  await delSave('C99');
+  const dL=calls.filter(c=>c.init&&c.init.method==='DELETE');
+  ck('L7 删跨网络存档带 code',dL.length===1&&dL[0].url.indexOf('id=99')>=0&&dL[0].url.indexOf('code=secret')>=0,
+     '实际='+JSON.stringify(dL.map(x=>x.url)));
+
+  /* L8 勾选状态持久化 */
+  ck('L8 勾选状态持久化',localStorage.getItem('qm_all_v1')==='1','实际='+localStorage.getItem('qm_all_v1'));
+
+  /* L9 存档值不在当前下拉选项内 → 回退默认（否则置空后 cast() 读到 NaN） */
+  g('iClock').options=[{value:'std'},{value:'local'},{value:'true'}];
+  g('iZi').options=[{value:'23'},{value:'0'}];
+  g('iJi').options=[{value:'2'},{value:'8'}];
+  loadParams({date:'2026-10-11',time:'08:00',lon:'118',clock:'bogus',zi:'99',ji:'7'});
+  ck('L9 非法下拉值回退默认',g('iClock').value==='true'&&g('iZi').value==='23'&&g('iJi').value==='2',
+     '实际='+g('iClock').value+'/'+g('iZi').value+'/'+g('iJi').value);
+  loadParams({date:'2026-10-11',time:'08:00',lon:'118',clock:'local',zi:'0',ji:'8'});
+  ck('L10 合法下拉值原样恢复',g('iClock').value==='local'&&g('iZi').value==='0'&&g('iJi').value==='8',
+     '实际='+g('iClock').value+'/'+g('iZi').value+'/'+g('iJi').value);
+  delete g('iClock').options;delete g('iZi').options;delete g('iJi').options;
+
+  /* 复位：避免污染后续（本组是最后一组，仍保持干净） */
+  try{localStorage.removeItem('qm_code_v1');localStorage.removeItem('qm_all_v1');}catch(e){}
+  g('savesCode').value='';g('savesAll').checked=false;
+  location.protocol='file:';
+  fetch=savedFetchL;
+}

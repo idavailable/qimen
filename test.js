@@ -1054,6 +1054,21 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
     ck('30.34 递推标记措辞为「递推…作答」', html.indexOf('→ 递推 ') >= 0, true);
   }
 
+  /* 30.35–30.40 跨设备读档：管理口令入口（前端接线，服务端能力早已具备） */
+  {
+    const fsx = require('fs');
+    const html = fsx.readFileSync('./public/index.html', 'utf8');
+    ck('30.35 存档面板含口令输入与「读全部」勾选', html.indexOf('id="savesCode"') >= 0 && html.indexOf('id="savesAll"') >= 0, true);
+    const all = html.match(/async function cloudSavesAll\(code\)\{[\s\S]*?\n\}/);
+    ck('30.36 全量查询走 ?all=1&code=', !!all && all[0].indexOf('/api/saves?limit=100&all=1&code=') >= 0, true);
+    ck('30.37 全量条目带 admin 标记（供删除时附口令）', !!all && all[0].indexOf('admin:true') >= 0, true);
+    const del = html.match(/async function delSave\(id\)\{[\s\S]*?\n\}/);
+    ck('30.38 删跨网络存档附口令', !!del && del[0].indexOf('row.admin&&code') >= 0 && del[0].indexOf('&code=') >= 0, true);
+    ck('30.39 口令与勾选持久化（KEY: qm_code_v1 / qm_all_v1）', html.indexOf("'qm_code_v1'") >= 0 && html.indexOf("'qm_all_v1'") >= 0, true);
+    const lp = html.match(/function loadParams\(p\)\{[\s\S]*?\n\}/);
+    ck('30.40 读档下拉值走选项白名单（非法值回退默认，不置空）', !!lp && (lp[0].match(/pickOpt\(/g) || []).length === 3, true);
+  }
+
   globalThis.fetch = origFetch;
 
   // 验证完毕输出小计

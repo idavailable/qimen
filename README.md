@@ -25,8 +25,8 @@ functions/api/          ← Pages Functions（不进静态产物）
   records.js            D1 解读记录：列表 / 详情 / 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（394 项）
-sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（105 项）
+test.js                 回归测试（400 项）
+sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（116 项）
 _audit_dom.js           jsdom 真实 DOM 复核（10 项：换局类别/停止文案/换盘历史/芯片覆盖/对比列等高滚动）
 schema.sql              D1 建表
 wrangler.toml           Pages 配置（含 D1 绑定）
@@ -75,7 +75,7 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `QM_RETRY_WAIT_MS` | 文本变量 | Gemini 重试间隔毫秒数；默认 `10000`（10 秒）。调小仅用于测试 |
 | `QM_GEMINI_MODELS` / `QM_DEEPSEEK_MODELS` | 文本变量 | 覆盖同族**递推顺序**（逗号分隔，书写顺序即试的顺序）；不设则用内置清单 |
 | `GEMINI_MODEL` / `DEEPSEEK_MODEL` | 文本变量 | 该家默认模型；设在则自动排在递推链最前 |
-| `ACCESS_CODE` | secret | 管理口令：`/api/records`、`/api/saves` 的全量查询（`?all=1`）、越权删除、清空校验；未设则一律禁止 |
+| `ACCESS_CODE` | secret | 管理口令：`/api/records`、`/api/saves` 的全量查询（`?all=1`）、越权删除、清空校验；未设则一律禁止。**也是跨设备读档的钥匙**——前端存档面板填该口令并勾选「读全部」，即可换网络/换电脑读到全部云端存档 |
 
 模型清单由 `GET /api/models` 动态返回（按密钥是否配置标注可用性），前端渲染成**可多选的模型芯片**，
 选中几个就并行解读几个、横向对比。后台增删供应商/密钥后刷新页面即可，不用改代码。
@@ -97,8 +97,8 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test          # 394 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推）
-npm run ui:verify # 105 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组）
+npm test          # 400 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推）
+npm run ui:verify # 116 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
 node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
 ```
 
@@ -142,6 +142,17 @@ node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHT
 | 递推节奏 | 当前模型 10 秒 ×2 重试；**同族候补逐个立即试一次**（换模型即换实例，不再各等 10 秒，免得干等翻倍）。递推沿用本家 `base`/`key`，只换模型名（跨家换名才会必然上游 400，同 F3 口径） |
 | 可读性 | 状态栏与列头改用展示名（`gemini-3.8-flash` → `Gemini 3.8 Flash`，`_lib.modelLabel`）；列头持久标记由「由 X 回落作答」改为「→ 递推 X 作答」；`error` 文案点明「同族 N 个模型依次递推后仍不可用（本策略只在 X 家族内递推，不跨用别家模型）」 |
 | 边界 | BYOK 无法枚举同族模型 → 递推链为空，直接报错，**不凭空编模型名**（必然上游 400）；`shouldRetry` 不变，非 Gemini 供应商仍一次即返 |
+
+## 2026-10-14 第八轮（跨设备读档：管理口令入口）
+
+| 项 | 做法 |
+|---|---|
+| 问题 | 云端存档默认按 `ip_hash`（`CF-Connecting-IP` 的 SHA-256 前 16 位）隔离——同一网络换电脑可读，**换网络就读不到**；本地存档在浏览器 localStorage，换机必无。服务端本有 `?all=1&code=ACCESS_CODE` 全量查询能力，但前端没有入口，线上也未配 `ACCESS_CODE` |
+| 前端入口 | 存档面板加「管理口令」输入框 + 「读全部云端存档（跨网络）」勾选 + 「刷新」；填对并勾选即调 `cloudSavesAll()` 走 `?limit=100&all=1&code=…`，跨网络/跨设备列出全部云端存档，可直接读档与删除。口令与勾选状态存本机 localStorage（`qm_code_v1` / `qm_all_v1`），面板打开时自动回填 |
+| 失败可见 | 服务端原话（「未设置 ACCESS_CODE，禁止全量查询」/「口令错误」）直接显示在面板提示位，不再静默当成「暂无存档」 |
+| 读档/删除 | 全量拉到的行带 `admin:true`：`loadSave` 先命中最近一次渲染的云端行（跨网络条目不在默认列表里）；`delSave` 对这类行附 `&code=`（服务端只有管理口令能删他人/他网络的存档） |
+| 顺带修（P3） | `loadParams` 由直接 `select.value=` 改为 `pickOpt()` 白名单回退：存档值不在当前 `<option>` 内时（旧档/云端旧档/选项改版）回退默认值，不再把选择框置空——空值会让 `cast()` 的时干入中寄 `parseInt('')` 得 NaN |
+| 测试 | `test.js` **400/400**（新增 30.35–30.40：面板入口、全量 URL、admin 标记、删除附口令、持久化键名、pickOpt 三处）· 沙箱 **116/116**（新增 L 组 11 项：默认不带 all/code、全量查询、跨网络存档入列、读档命中、口令错误提示、删除附口令、持久化、pickOpt 回退与合法值恢复）· jsdom **10/10** |
 
 ## 路线图
 
