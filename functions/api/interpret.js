@@ -61,7 +61,10 @@ async function handle(request, env, ctx) {
   if (!upstream) return L.errMsg('上游连接失败', 502);
   if (!upstream.ok) {
     let detail = '';
-    try { detail = String(await upstream.text()).slice(0, 300); } catch (e) { }
+    try {
+      /* 五轮（浏览器实测）：上游错误体常为 HTML 错误页——剥标签压空白，避免整页markup透传给前端 */
+      detail = String(await upstream.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    } catch (e) { }
     return L.errMsg('上游 HTTP ' + upstream.status + (detail ? ' ' + detail : ''), upstream.status === 401 ? 401 : 502);
   }
 

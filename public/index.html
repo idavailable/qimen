@@ -736,7 +736,7 @@ async function aiServerStream(pan,model,history,onDelta){
   if(!resp.ok){
     let d='';try{d=String(await resp.text()).slice(0,300);}catch(e){}
     let msg='HTTP_'+resp.status;
-    try{const j=JSON.parse(d);if(j&&j.error)msg=String(j.error);}catch(e){if(d)msg+=' '+d;}
+    try{const j=JSON.parse(d);if(j&&j.error)msg=String(j.error);}catch(e){if(d)msg+=' '+d.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,160);}
     const err=new Error(msg);err.status=resp.status;throw err;
   }
   const ct=String(resp.headers&&resp.headers.get?resp.headers.get('content-type'):'').toLowerCase();
