@@ -30,25 +30,35 @@ function buildPanText(R,catId){
   if(!m)return null; // paipan 直出局无四柱，无法解读
   const py=YS.pillars(R);
   const p2=n=>String(n).padStart(2,'0');
+  const isFei=R.pan==='fei';
+  const METHOD={chaibu:'拆补法',zhiran:'置闰法',maoshan:'茅山法'};
   const L=[];
-  L.push('【奇门遁甲盘面】（转盘派 · 拆补法定局）');
+  L.push('【奇门遁甲盘面】（'+(isFei?'飞盘派':'转盘派')+' · '+(METHOD[m.method]||'拆补法')+'定局）');
   L.push('起局：'+m.ly+'-'+p2(m.lm)+'-'+p2(m.ld)+' '+p2(m.lh)+':'+p2(m.lmi)+'（'+({std:'北京时间',local:'地方平太阳时',true:'真太阳时'}[m.clock]||m.clock)+'）');
   L.push('四柱：'+py.year+'年 '+py.month+'月 '+py.day+'日 '+py.hour+'时');
-  L.push('局：'+(R.dun===1?'阳遁':'阴遁')+R.ju+'局 · '+m.term+m.yuanName+'（符头'+m.fuTou+'，'+(m.fuTouBack>0?m.fuTouBack+'日前':'当日')+'）');
+  /* 定局句随流派：茅山不看符头；置闰给超神/接气/正授/置闰与上元符头；拆补给符头回溯 */
+  if(m.method==='maoshan')
+    L.push('局：'+(R.dun===1?'阳遁':'阴遁')+R.ju+'局 · '+m.juTerm+m.yuanName+'（茅山法：交节日当天起算，每 5 日一元，不看符头）');
+  else if(m.method==='zhiran')
+    L.push('局：'+(R.dun===1?'阳遁':'阴遁')+R.ju+'局 · '+m.juTerm+m.yuanName+'（置闰法·'+m.rule+'，上元符头'+m.fuTou+(m.fuTouBack>0?'，'+m.fuTouBack+'日前':'，当日')+'）');
+  else
+    L.push('局：'+(R.dun===1?'阳遁':'阴遁')+R.ju+'局 · '+m.term+m.yuanName+'（符头'+m.fuTou+'，'+(m.fuTouBack>0?m.fuTouBack+'日前':'当日')+'）');
   L.push('旬首：'+R.xunName+'（遁'+R.xunYi+'）；时居旬内第'+R.n+'位');
   L.push('值符：'+R.zfStar+'落'+PAL[R.zfTo].gua+R.zfTo+'宫；值使：'+R.zsDoor+'落'+PAL[R.zsLuo].gua+R.zsLuo+'宫');
-  L.push('天禽随天芮寄'+PAL[R.guest.pal].gua+R.guest.pal+'宫（中宫干'+R.guest.gan+'并显）');
+  if(isFei)L.push('中五宫：飞盘入序，有星有神无门，不做天禽寄宫');
+  else L.push('天禽'+(R.tianqin==='yangen-yinkun'?'（阳遁寄艮八 · 阴遁寄坤二）':'随天芮')+'寄'+PAL[R.guest.pal].gua+R.guest.pal+'宫（中宫干'+R.guest.gan+'并显）');
   L.push('旬空：时'+R.xunName+'旬空'+R.kong.hour.zhi.join('、')+'落'+[...new Set(R.kong.hour.pal)].map(p=>PAL[p].gua+p+'宫').join('、')+
         '；日'+QM.gz(R.meta.dayIdx-(R.meta.dayIdx%10)).slice(0,2)+'旬空'+R.kong.day.zhi.join('、')+'落'+[...new Set(R.kong.day.pal)].map(p=>PAL[p].gua+p+'宫').join('、'));
   L.push('驿马：日马'+R.ma.day.zhi+'落'+PAL[R.ma.day.pal].gua+R.ma.day.pal+'宫；年马'+R.ma.year.zhi+'落'+PAL[R.ma.year.pal].gua+R.ma.year.pal+'宫');
   L.push('日干'+R.luo.dayGan+(R.luo.dayDun!==R.luo.dayGan?'（遁'+R.luo.dayDun+'）':'')+'落'+(R.luo.dayPal?PAL[R.luo.dayPal].gua+R.luo.dayPal+'宫':'未上盘')+
         '；时干'+R.luo.hourGan+(R.luo.hourDun!==R.luo.hourGan?'（遁'+R.luo.hourDun+'）':'')+'落'+(R.luo.hourPal?PAL[R.luo.hourPal].gua+R.luo.hourPal+'宫':'未上盘'));
   L.push('');
-  L.push('九宫（每宫：八神/九星·八门/天盘干·地盘干；南下北上）');
+  L.push('九宫（每宫：'+(isFei?'九神':'八神')+'/九星·八门/天盘干·地盘干；南下北上）');
   for(const p of GRID){
-    const sky=p===5?R.di[5]:R.tian[p];
-    const g=(p!==5&&R.guest.pal===p&&R.guest.gan!==R.tian[p])?('（寄中干'+R.guest.gan+'）'):'';
-    L.push(PAL[p].gua+p+'宫['+PAL[p].wx+']：'+(p===5?'—':R.god[p])+' / '+(p===5?'天禽':R.tianStar[p])+'·'+R.door[p]+' / '+sky+g+'·'+R.di[p]);
+    const sky=p===5?(isFei?R.tian[5]:R.di[5]):R.tian[p];
+    const g=(p!==5&&!isFei&&R.guest.pal===p&&R.guest.gan!==R.tian[p])?('（寄中干'+R.guest.gan+'）'):'';
+    const starTxt=p===5?(isFei?R.tianStar[5]:'天禽'):R.tianStar[p];
+    L.push(PAL[p].gua+p+'宫['+PAL[p].wx+']：'+R.god[p]+' / '+starTxt+'·'+R.door[p]+' / '+sky+g+'·'+R.di[p]);
   }
   L.push('');
   const G=R.geju||[];

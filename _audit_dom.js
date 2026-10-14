@@ -1,6 +1,19 @@
 /* 真实 DOM（jsdom）复核 v2：修正测试自身干扰（let 不挂 window / fetch 须响应 abort） */
 const fs=require('fs'),path=require('path');
-const {JSDOM}=require('C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules/jsdom');
+/* 换机适配：优先 require('jsdom')（NODE_PATH 指向托管 workspace），
+   失败再依次试本机托管路径与历史硬编码路径（旧机 Administrator） */
+let JSDOM;
+try{({JSDOM}=require('jsdom'));}
+catch(e){
+  const fs0=require('fs'),os=require('os'),path0=require('path');
+  const home=os.homedir();
+  const cands=[
+    path0.join(home,'.workbuddy/binaries/node/workspace/node_modules/jsdom'),
+    'C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules/jsdom',
+  ];
+  for(const c of cands){try{({JSDOM}=require(c));break;}catch(_){}}
+  if(!JSDOM)throw e;
+}
 const PB=path.join(__dirname,'public');
 const html=fs.readFileSync(path.join(PB,'index.html'),'utf8');
 /* 第十轮：界面脚本已抽离为 public/app.js（index.html 只留 <script src>），jsdom 直接读文件 */

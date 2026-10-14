@@ -513,6 +513,224 @@ try{YS.take(P,'qiucai');ck('paipan 不抛错',true,true);}catch(e){ck('paipan �
   ck('pillars hourIdx=meta.hourIdx',pa.hourIdx,Ra.meta.hourIdx);
 }
 
+/* ---- 三十二、P1-3 流派配置系统：飞盘派 / 天禽寄宫变体 / 茅山法 / 置闰法 ---- */
+console.log('\n=== 三十二、P1-3 流派配置（飞盘 / 寄宫 / 茅山 / 置闰） ===');
+const jdOfD=(y,m,d)=>Math.floor(QM.toJD(y,m,d,0,0,0)+0.5);
+
+/* 32.1–32.7 新导出常量 */
+ck('32.1 阳遁九神含勾陈/太常/朱雀',QM.GODS9_YANG.join(','),'值符,螣蛇,太阴,六合,勾陈,太常,朱雀,九地,九天');
+ck('32.2 阴遁九神含白虎/太常/玄武',QM.GODS9_YIN.join(','),'值符,螣蛇,太阴,六合,白虎,太常,玄武,九地,九天');
+ck('32.3 九神均为 9 位',QM.GODS9_YANG.length===9&&QM.GODS9_YIN.length===9,true);
+ck('32.4 飞盘八门序列跳过中五',QM.DOOR_FEI.join(','),'1,2,3,4,6,7,8,9');
+ck('32.5 星→本宫映射（飞盘天盘干用）',QM.STAR_HOME['天蓬']+'/'+QM.STAR_HOME['天英'],'1/9');
+ck('32.6 置闰仅芒种/大雪二节',[...QM.RUN_TERMS].sort().join(','),'大雪,芒种');
+ck('32.7 节气序 24 项',QM.ZHIRAN_TERMS.length,24);
+
+/* 32.8–32.24 飞盘派完整算例
+   盘面取自《待完成.md》§3.3「四个独立来源交叉确认」的算例（阳遁一局、值符甲午辛·天辅星、值使杜门）。
+   注意：该算例原文标注「2006-12-22 丙戌日丙申时」，但按本引擎历法（已与 lunar-javascript 全量交叉校验，
+   见 31.3 日柱锚点）2006-12-22 实为乙酉日；文档给出的引擎内参数为 hourIdx=32 / dun=1 / ju=1 / zfPal=4，
+   盘面仅由这四个量决定，故按文档自述的引擎内参数直接验证（盘面四源一致，与日期标签无关）。 */
+{
+  const F=QM.paipan(1,1,32,2,{pan:'fei'});
+  ck('32.8 飞盘 值符星=天辅',F.zfStar,'天辅');
+  ck('32.9 飞盘 值符落宫=艮八',F.zfTo,8);
+  ck('32.10 飞盘 值使门=杜门',F.zsDoor,'杜门');
+  ck('32.11 飞盘 值使落宫=乾六',F.zsLuo,6);
+  ck('32.12 飞盘 guest=null（中五入序不寄宫）',F.guest,null);
+  ck('32.13 飞盘 R.pan=fei / R.tianqin=null',F.pan+'/'+F.tianqin,'fei/null');
+  const diE={1:'戊',2:'己',3:'庚',4:'辛',5:'壬',6:'癸',7:'丁',8:'丙',9:'乙'};
+  let diBad=0;for(let p=1;p<=9;p++)if(F.di[p]!==diE[p])diBad++;
+  ck('32.14 飞盘地盘九宫干（同转盘）',diBad,0);
+  const stE={1:'天心',2:'天柱',3:'天任',4:'天英',5:'天蓬',6:'天芮',7:'天冲',8:'天辅',9:'天禽'};
+  let stBad=0;for(let p=1;p<=9;p++)if(F.tianStar[p]!==stE[p])stBad++;
+  ck('32.15 飞盘九星（洛书数序含中五）',stBad,0);
+  const drE={1:'景门',2:'休门',3:'死门',4:'伤门',5:'—',6:'杜门',7:'开门',8:'惊门',9:'生门'};
+  let drBad=0;for(let p=1;p<=9;p++)if(F.door[p]!==drE[p])drBad++;
+  ck('32.16 飞盘八门（跳过中五，中五无门）',drBad,0);
+  const gdE={1:'太阴',2:'六合',3:'勾陈',4:'太常',5:'朱雀',6:'九地',7:'九天',8:'值符',9:'螣蛇'};
+  let gdBad=0;for(let p=1;p<=9;p++)if(F.god[p]!==gdE[p])gdBad++;
+  ck('32.17 飞盘九神（含中五朱雀）',gdBad,0);
+  const tnE={1:'癸',2:'丁',3:'丙',4:'乙',5:'戊',6:'己',7:'庚',8:'辛',9:'壬'};
+  let tnBad=0;for(let p=1;p<=9;p++)if(F.tian[p]!==tnE[p])tnBad++;
+  ck('32.18 飞盘天盘干=每星本宫地盘干',tnBad,0);
+  /* 不变量：九星九门九神齐全互异；天盘干恒等于「该宫星的本宫地盘干」 */
+  ck('32.19 飞盘九星 9 颗齐全',new Set(Object.values(F.tianStar)).size,9);
+  ck('32.20 飞盘八门 8 门齐全',new Set(Object.values(F.door).filter(x=>x!=='—')).size,8);
+  ck('32.21 飞盘九神 9 位齐全',new Set(Object.values(F.god)).size,9);
+  let ruleBad=0;for(let p=1;p<=9;p++)if(F.tian[p]!==F.di[QM.STAR_HOME[F.tianStar[p]]])ruleBad++;
+  ck('32.22 飞盘天盘干规则逐宫自洽',ruleBad,0);
+  /* 与转盘相同之处：定局、地盘、旬首六仪、值符星、值符落宫、值使门、值使落宫 */
+  const Z=QM.paipan(1,1,32,2);
+  const diStr=R=>[1,2,3,4,5,6,7,8,9].map(p=>R.di[p]).join(',');
+  ck('32.23 飞盘与转盘同地盘/值符/值使',F.zfStar===Z.zfStar&&F.zfTo===Z.zfTo&&F.zsDoor===Z.zsDoor&&F.zsLuo===Z.zsLuo&&diStr(F)===diStr(Z),true);
+  ck('32.24 转盘仍为八神且中五无值',Z.god[5],'—');
+  /* 阴遁飞盘抽验：中五有神无门、不寄宫 */
+  const FY=QM.paipan(-1,9,2,2,{pan:'fei'});
+  ck('32.25 阴遁飞盘中五无门',FY.door[5],'—');
+  ck('32.26 阴遁飞盘中五有神（九地九天之前）',FY.god[5]!=='—'&&FY.god[5]!==undefined,true);
+  ck('32.27 阴遁飞盘不寄宫',FY.guest,null);
+  ck('32.28 阴遁飞盘九神取阴遁序列',FY.god[8]!==undefined&&QM.GODS9_YIN.indexOf(FY.god[8])>=0,true);
+}
+
+/* 32.29–32.37 天禽寄宫变体 tianqin（转盘专用；飞盘不寄宫） */
+{
+  const A=QM.paipan(1,1,0,2);                       // 阳一局甲子时 shift=0
+  ck('32.29 默认随芮：寄坤二',A.guest.pal,2);
+  ck('32.30 寄宫干=中五宫干',A.guest.gan,A.di[5]);
+  ck('32.31 寄宫星为天禽',A.guest.star,'天禽');
+  ck('32.32 寄宫落点天盘星恒为天芮（随芮语义）',A.tianStar[A.guest.pal],'天芮');
+  const B=QM.paipan(1,1,0,2,{tianqin:'yangen-yinkun'});
+  ck('32.33 阳遁寄艮八（变体）',B.guest.pal,8);
+  const E=QM.paipan(-1,9,0,2),F=QM.paipan(-1,9,0,2,{tianqin:'yangen-yinkun'});
+  ck('32.34 阴遁两变体同寄坤二',E.guest.pal===2&&F.guest.pal===2,true);
+  const C=QM.paipan(1,1,2,2),D=QM.paipan(1,1,2,2,{tianqin:'yangen-yinkun'});
+  ck('32.35 随芮随值符移位（shift=1 → 兑七）',C.guest.pal,7);
+  ck('32.36 寄艮八随值符移位（shift=1 → 震三）',D.guest.pal,3);
+  ck('32.37 变体名透出 R.tianqin',A.tianqin+'/'+B.tianqin,'suirui/yangen-yinkun');
+}
+
+/* 32.38–32.44 茅山法算例（奇门派 2027 年 12 月日历：交节日当天起算每 5 日一元，不看符头） */
+{
+  const m21=QM.cast(2027,12,21,12,0,{lon:120,clock:'true',ziSwap:true,jg:2,method:'maoshan'});
+  ck('32.38 茅山 2027-12-21 = 大雪下元阴一局',m21.meta.juTerm+'/'+m21.meta.yuanName+'/'+m21.dun+'/'+m21.ju,'大雪/下元/-1/1');
+  ck('32.39 茅山 2027-12-21 距交节 14 日',m21.meta.juDayDiff,14);
+  const m22=QM.cast(2027,12,22,12,0,{lon:120,clock:'true',ziSwap:true,jg:2,method:'maoshan'});
+  ck('32.40 茅山 2027-12-22 = 冬至上元阳一局',m22.meta.juTerm+'/'+m22.meta.yuanName+'/'+m22.dun+'/'+m22.ju,'冬至/上元/1/1');
+  ck('32.41 茅山交节日当天即上元第 1 日',m22.meta.juDayDiff,0);
+  /* 同一日三法并列：茅山以节气为准，交节即换局；拆补/置闰仍看符头 */
+  const c22=QM.cast(2027,12,22,12,0,{lon:120,clock:'true',ziSwap:true,jg:2,method:'chaibu'});
+  ck('32.42 同日拆补仍属下元（未换）',c22.meta.juTerm+'/'+c22.meta.yuanName,'冬至/下元');
+  const z22=QM.cast(2027,12,22,12,0,{lon:120,clock:'true',ziSwap:true,jg:2,method:'zhiran'});
+  ck('32.43 同日置闰仍行大雪闰奇下元（冬至符头未到）',z22.meta.juTerm+'/'+z22.meta.yuanName+'/'+z22.meta.rule,'大雪/下元/置闰');
+  /* 三法同日分歧：茅山交节即换（冬至上元），拆补按符头换（冬至下元），置闰要等冬至上元符头己卯（12-26） */
+  ck('32.43b 置闰冬至上元符头 = 12-26 己卯',QM.zhiranJu(jdOfD(2027,12,26)).fuTou,'己卯');
+  ck('32.43c 置闰冬至上元属接气',QM.zhiranJu(jdOfD(2027,12,26)).rule,'接气');
+  ck('32.44 茅山法不产符头字段',m22.meta.fuTou,null);
+}
+
+/* 32.45–32.62 置闰法《奇门遁甲统宗》康熙五十七算例
+   锚点：康熙五十六年冬至上元符头 = 1717-12-16 甲子（冬至前 7 日吸附到最近符头日）。
+   走查应自动在康熙五十七年芒种触发一次置闰：芒种上元己酉 → 三元 → 闰奇甲子/己巳/甲戌 → 夏至上元己卯（接气）。
+   （文档 §3.1 该算例的「初六甲申、十一己丑」与符头块 5 日一步自洽性矛盾——己酉+5=甲寅、+10=己未，
+     且闰奇链甲子→己巳→甲戌与夏至上元己卯均与引擎输出逐项吻合，故判定为文档笔误，此处按引擎走查值固化。） */
+{
+  ck('32.45 置闰锚点 = 1717-12-16 甲子',QM.gz(QM.dayGZIndex(QM.zhiranAnchor())),'甲子');
+  const jd=(y,m,d)=>jdOfD(y,m,d);
+  const a1=QM.zhiranJu(jd(1718,5,15));
+  ck('32.46 小满上元符头甲午（早于交节）',a1.term+'/'+QM.YUAN_NAME[a1.yuan]+'/'+a1.rule,'小满/上元/超神6日');
+  const a2=QM.zhiranJu(jd(1718,5,28));
+  ck('32.47 小满下元局阳八',a2.yuan+':'+a2.ju,'2:8');
+  const b1=QM.zhiranJu(jd(1718,5,30));
+  ck('32.48 五月初一己酉 = 芒种上元',QM.gz(QM.dayGZIndex(jd(1718,5,30)))+'/'+b1.term+'/'+QM.YUAN_NAME[b1.yuan]+'/'+b1.rule,'己酉/芒种/上元/超神7日');
+  ck('32.49 芒种上元局阳六',b1.ju,6);
+  const b2=QM.zhiranJu(jd(1718,6,4));
+  ck('32.50 芒种中元局阳三',b2.ju,3);
+  const b3=QM.zhiranJu(jd(1718,6,9));
+  ck('32.51 芒种下元局阳九',b3.ju,9);
+  const r1=QM.zhiranJu(jd(1718,6,14));
+  ck('32.52 五月十六甲子 = 芒种闰奇上元',QM.gz(QM.dayGZIndex(jd(1718,6,14)))+'/'+r1.rule+'/'+QM.YUAN_NAME[r1.yuan],'甲子/置闰/上元');
+  ck('32.53 闰奇仍用芒种上局（阳六）',r1.ju,6);
+  const r2=QM.zhiranJu(jd(1718,6,19));
+  ck('32.54 闰奇中元己巳 局阳三',QM.gz(QM.dayGZIndex(jd(1718,6,19)))+'/'+r2.ju,'己巳/3');
+  const r3=QM.zhiranJu(jd(1718,6,24));
+  ck('32.55 闰奇下元甲戌 局阳九',QM.gz(QM.dayGZIndex(jd(1718,6,24)))+'/'+r3.ju,'甲戌/9');
+  const x1=QM.zhiranJu(jd(1718,6,29));
+  ck('32.56 六月初二己卯 = 夏至上元（接气）',QM.gz(QM.dayGZIndex(jd(1718,6,29)))+'/'+x1.term+'/'+QM.YUAN_NAME[x1.yuan]+'/'+x1.rule,'己卯/夏至/上元/接气');
+  ck('32.57 夏至上元局阴九',x1.ju,9);
+  ck('32.58 置闰只在芒种/大雪触发（夏至无闰）',x1.rule!=='置闰',true);
+  ck('32.59 锚点之前回退拆补',QM.zhiranJu(jd(1700,6,1)),null);
+  const zc=QM.cast(1700,6,1,12,0,{lon:120,clock:'true',ziSwap:true,jg:2,method:'zhiran'});
+  ck('32.60 锚点前 cast 回退拆补并注明',zc.meta.method+'/'+zc.meta.rule,'chaibu/拆补（置闰锚点前回退）');
+  /* 走查缓存隔离：先查锚点当日（1717），再查 1718 不得被污染 */
+  const before=QM.zhiranJu(jd(1718,6,29));
+  QM.zhiranJu(jd(1717,12,16));
+  const after=QM.zhiranJu(jd(1718,6,29));
+  ck('32.61 年初走查缓存按年隔离',JSON.stringify(before)===JSON.stringify(after),true);
+  ck('32.62 锚点当日可定局（冬至上元阳一）',QM.zhiranJu(jd(1717,12,16)).ju,1);
+}
+
+/* 32.63–32.68 流派入口：cast 默认值向后兼容 + meta 透出 */
+{
+  const d=QM.cast(2026,10,14,12,0,{lon:120,clock:'true',ziSwap:true,jg:2});
+  ck('32.63 默认 method=chaibu',d.meta.method,'chaibu');
+  ck('32.64 默认 pan=zhuan',d.meta.pan,'zhuan');
+  ck('32.65 默认 tianqin=suirui',d.meta.tianqin,'suirui');
+  ck('32.66 拆补 rule=拆补',d.meta.rule,'拆补');
+  const f=QM.cast(2006,12,22,16,0,{lon:120,clock:'true',ziSwap:true,jg:2,pan:'fei'});
+  ck('32.67 cast 飞盘透出且 guest=null',f.pan+'/'+f.guest,'fei/null');
+  const yk=QM.cast(2006,12,22,16,0,{lon:120,clock:'true',ziSwap:true,jg:2,tianqin:'yangen-yinkun'});
+  ck('32.68 cast 寄宫变体透出',yk.tianqin,'yangen-yinkun');
+}
+
+/* 32.69–32.76 入模文本（interpret.buildPanText）随流派改口 */
+{
+  const QMI32=require('./public/interpret.js');
+  const base={lon:120,clock:'true',ziSwap:true,jg:2};
+  const tDef=QMI32.buildPanText(QM.cast(2026,10,14,12,0,base),'qiucai');
+  ck('32.69 默认口径=转盘派 · 拆补法',tDef.split('\n')[0],'【奇门遁甲盘面】（转盘派 · 拆补法定局）');
+  const tFei=QMI32.buildPanText(QM.cast(2026,10,14,12,0,Object.assign({pan:'fei'},base)),'qiucai');
+  ck('32.70 飞盘口径写入首行',tFei.split('\n')[0],'【奇门遁甲盘面】（飞盘派 · 拆补法定局）');
+  ck('32.71 飞盘不写「天禽寄宫」而写中五入序',tFei.indexOf('中五宫：飞盘入序')>=0&&tFei.indexOf('天禽随天芮寄')<0,true);
+  ck('32.72 飞盘九宫行改称九神',tFei.indexOf('每宫：九神/九星·八门')>=0,true);
+  ck('32.73 飞盘中五宫有星有神无门',/中5宫\[土\]：[^/]*\/[^·]*·— \//.test(tFei),true);
+  const tMs=QMI32.buildPanText(QM.cast(2027,12,22,12,0,Object.assign({method:'maoshan'},base)),'qiucai');
+  ck('32.74 茅山口吻：交节日均分不问符头',tMs.indexOf('茅山法：交节日当天起算，每 5 日一元，不看符头')>=0,true);
+  const tZr=QMI32.buildPanText(QM.cast(1718,6,14,12,0,Object.assign({method:'zhiran',lon:116},base)),'qiucai');
+  ck('32.75 置闰口吻：标rule与上元符头',tZr.indexOf('置闰法·置闰，上元符头甲子')>=0,true);
+  ck('32.76 系统提示词含起局流派口径段',require('./public/prompt.js').indexOf('【起局流派口径】')>=0,true);
+}
+
+/* 32.77–32.86 P2-2 分享链接：encodeParams / decodeParams 纯函数 */
+{
+  /* app.js 是浏览器脚本（无 module.exports），用 vm 在一个带最小 DOM 的沙箱里求值，
+     从而直接调到顶层纯函数；沙箱极简 DOM 与真实浏览器行为一致（未知 id 自动创建）。 */
+  const vm=require('vm');
+  const src=require('fs').readFileSync('./public/app.js','utf8');
+  /* 极简 DOM 桩：够 app.js 顶层 IIFE + init() 跑完即可（未知 id 一律返回同一形状的空元素） */
+  const mkEl=()=>({value:'',innerHTML:'',textContent:'',options:[],dataset:{},style:{},
+    appendChild(){},addEventListener(){},removeEventListener(){},querySelectorAll:()=>[],
+    classList:{add(){},remove(){},toggle(){}},focus(){},remove(){},click(){}});
+  const mkSandbox=(hash,proto)=>({
+    QM:QM,YS:YS,QMI:require('./public/interpret.js'),PROMPT:require('./public/prompt.js'),
+    document:{getElementById:mkEl,createElement:mkEl,querySelectorAll:()=>[],
+              body:{appendChild(){},removeChild(){}},execCommand(){}},
+    navigator:{},location:{protocol:proto||'https:',hash:hash||'',href:'https://x.test/'+(hash||'')},
+    history:{replaceState(){}},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+    window:{addEventListener(){}},alert(){},console:console,btoa:btoa,atob:atob,
+    TextEncoder:TextEncoder,TextDecoder:TextDecoder,
+    setTimeout:setTimeout,Promise:Promise,fetch:undefined
+  });
+  const load=(hash,proto)=>{
+    const sb=mkSandbox(hash,proto);
+    vm.createContext(sb);
+    vm.runInContext(src,sb,{timeout:5000});
+    return sb;
+  };
+  const enc=load();
+  ck('32.77 encodeParams 输出 base64url 字符集',
+    /^[A-Za-z0-9\-_]+$/.test(enc.encodeParams({date:'2026-10-14',time:'12:00',lon:120,clock:'true',zi:'23',ji:'2',pan:'fei',method:'zhiran',tq:'suirui',cat:'qiucai',q:'问事业'})),true);
+  ck('32.78 base64url 不含 + / =',/[+/=]/.test(enc.encodeParams({date:'2026-10-14',time:'12:00'})),false);
+  const one=enc.encodeParams({date:'2026-10-14',time:'12:00'});
+  const round=enc.decodeParams('#p='+one);
+  ck('32.79 编解码往返一致',JSON.stringify(round),JSON.stringify({date:'2026-10-14',time:'12:00'}));
+  ck('32.80 空字段不进入编码',Object.keys(enc.decodeParams('#p='+enc.encodeParams({date:'2026-10-14',q:'',cat:null,zzz:1}))).join(','),'date');
+  ck('32.81 白名单过滤脏键',Object.keys(enc.decodeParams('#p='+enc.encodeParams({date:'2026-10-14',evil:'<script>'}))).join(','),'date');
+  ck('32.82 无 #p= 返回 null',enc.decodeParams(''),null);
+  ck('32.83 无 #p= 返回 null（别的 hash）',enc.decodeParams('#foo=1'),null);
+  ck('32.84 坏 base64 返回 null（不抛错）',enc.decodeParams('#p=!!!not-base64!!!'),null);
+  ck('32.85 非 JSON 的 base64 返回 null',enc.decodeParams('#p='+btoa('hello').replace(/=+$/,'')),null);
+  ck('32.86 流派三组随分享往返',enc.decodeParams('#p='+enc.encodeParams({pan:'fei',method:'maoshan',tq:'yangen-yinkun'})).tq,'yangen-yinkun');
+  /* 中文问事文本必须能编（btoa 只吃 Latin-1，早年直接 btoa(JSON) 遇中文即抛错返空） */
+  const cn=enc.encodeParams({date:'2026-10-14',time:'12:00',q:'今年事业能否升职'});
+  ck('32.87 中文问事文本可编码',/^[A-Za-z0-9\-_]+$/.test(cn)&&cn.length>0,true);
+  ck('32.88 中文问事文本往返一致',enc.decodeParams('#p='+cn).q,'今年事业能否升职');
+  /* file:// 打开的 hash 同样可还原（分享不依赖 http） */
+  const fe=load('#p='+cn,'file:');
+  ck('32.89 file:// 下同样能解出分享参数',fe.decodeParams(fe.location.hash).q,'今年事业能否升职');
+  ck('32.90 空参数对象编码为空串',enc.encodeParams({}),'');
+}
+
 /* ---- 廿六、M4 AI 流式解读 ---- */
 console.log('\n=== 廿六、M4 AI 流式解读（interpret.js） ===');
 const QMI=require('./public/interpret.js');
@@ -1264,8 +1482,31 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
     ck('30.38 删跨网络存档附口令', !!del && del[0].indexOf('row.admin&&code') >= 0 && del[0].indexOf('&code=') >= 0, true);
     ck('30.39 口令与勾选持久化（KEY: qm_code_v1 / qm_all_v1）', html.indexOf("'qm_code_v1'") >= 0 && html.indexOf("'qm_all_v1'") >= 0, true);
     const lp = html.match(/function loadParams\(p\)\{[\s\S]*?\n\}/);
-    ck('30.40 读档下拉值走选项白名单（iClock/iZi/iJi/yCat 四处，非法值回退不置空）',
-      !!lp && (lp[0].match(/pickOpt\(/g) || []).length === 4 && lp[0].indexOf("pickOpt('yCat'") >= 0, true);
+    ck('30.40 读档下拉值走选项白名单（iClock/iZi/iJi/iPan/iMethod/iTq/yCat 七处，非法值回退不置空）',
+      !!lp && (lp[0].match(/pickOpt\(/g) || []).length === 7 && lp[0].indexOf("pickOpt('yCat'") >= 0, true);
+    ck('30.40b 读档默认值与 cast 一致（转盘/拆补/随芮）',
+      !!lp && lp[0].indexOf("pickOpt('iPan',p.pan,'zhuan')") >= 0 && lp[0].indexOf("pickOpt('iMethod',p.method,'chaibu')") >= 0 && lp[0].indexOf("pickOpt('iTq',p.tq,'suirui')") >= 0, true);
+  }
+
+  /* 30.41–30.48 P1-3 流派配置前端接线：三下拉 + 传入 cast + 摘要/渲染标注 + 旧档兼容 */
+  {
+    const fsx = require('fs');
+    const html = fsx.readFileSync('./public/index.html', 'utf8') + '\n' + fsx.readFileSync('./public/app.js', 'utf8');
+    const ids=['iPan','iMethod','iTq'].map(id=>html.indexOf('id="'+id+'"'));
+    ck('30.41 输入区含三下拉 iPan/iMethod/iTq（且按此顺序）',
+      ids.every(i=>i>=0)&&ids[0]<ids[1]&&ids[1]<ids[2], true);
+    ck('30.42 派别选项为转盘/飞盘', /<select id="iPan">[\s\S]*?value="zhuan"[\s\S]*?value="fei"/.test(html), true);
+    ck('30.43 定局法选项为拆补/置闰/茅山', /<select id="iMethod">[\s\S]*?value="chaibu"[\s\S]*?value="zhiran"[\s\S]*?value="maoshan"/.test(html), true);
+    ck('30.44 寄宫选项为随芮/阳艮阴坤', /<select id="iTq">[\s\S]*?value="suirui"[\s\S]*?value="yangen-yinkun"/.test(html), true);
+    const cf = html.match(/function cast\(\)\{[\s\S]*?\n\}/);
+    ck('30.45 cast() 把三组流派透传 QM.cast',
+      !!cf && cf[0].indexOf('QM.cast(Y,M,D,h0,m0,{lon,clock,ziSwap,jg,pan,method,tianqin})') >= 0, true);
+    const sp = html.match(/function saveParams\(\)\{[\s\S]*?\n\}/);
+    ck('30.46 存档带 pan/method/tq 三字段', !!sp && sp[0].indexOf("pan:document.getElementById('iPan').value") >= 0 && sp[0].indexOf("tq:document.getElementById('iTq').value") >= 0, true);
+    const cs = html.match(/function castSummary\(R\)\{[\s\S]*?\n\}/);
+    ck('30.47 摘要标注派别与定局法', !!cs && cs[0].indexOf("转盘派") >= 0 && cs[0].indexOf("置闰法") >= 0, true);
+    ck('30.48 副标题与告示条不再写「尚未实现」',
+      html.indexOf('转盘/飞盘') >= 0 && html.indexOf('尚未实现') < 0 && html.indexOf('流派配置') >= 0, true);
   }
 
   globalThis.fetch = origFetch;

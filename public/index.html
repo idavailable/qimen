@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>奇门遁甲决策工具 · M1-M4</title>
+<meta name="theme-color" content="#0F6E56">
+<meta name="description" content="时家奇门遁甲排盘与 AI 解读：转盘/飞盘 · 拆补/置闰/茅山三法定局 · 格局库 · 问事用神。排盘纯前端、可离线。">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 :root{
   --bg:#f7f6f2;--card:#fff;--line:#dcd9d0;--ink:#2c2c2a;--muted:#6f6e68;
@@ -99,7 +104,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
 <body>
 
 <h1>奇门遁甲决策工具</h1>
-<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 418 项全过 + 浏览器沙箱全流程 119 项全过</div>
+<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘/飞盘 · 拆补/置闰/茅山 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 541 项全过 + 浏览器沙箱全流程 128 项 + 渲染冒烟 65 项全过</div>
 
 <div class="card">
   <h2>一、输入</h2>
@@ -126,8 +131,31 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
         <option value="8">寄艮八宫</option>
       </select>
     </div>
+    <div class="field"><label>排盘派别</label>
+      <select id="iPan">
+        <option value="zhuan" selected>转盘派（主流）</option>
+        <option value="fei">飞盘派（星门神飞布）</option>
+      </select>
+    </div>
+    <div class="field"><label>定局法</label>
+      <select id="iMethod">
+        <option value="chaibu" selected>拆补法（现代主流）</option>
+        <option value="zhiran">置闰法（超神接气置闰）</option>
+        <option value="maoshan">茅山法（交节日均分）</option>
+      </select>
+    </div>
+    <div class="field"><label>天禽寄宫</label>
+      <select id="iTq">
+        <option value="suirui" selected>天禽随天芮（坤二）</option>
+        <option value="yangen-yinkun">阳遁寄艮八 · 阴遁寄坤二</option>
+      </select>
+    </div>
     <button onclick="cast()">起局</button>
     <button class="ghost" onclick="setNow()">现在</button>
+    <button class="ghost" id="hPrev" onclick="prevCast()" title="回到上一局（连同流派配置一起回放）">◀ 上一局</button>
+    <button class="ghost" id="hNext" onclick="nextCast()" title="前往下一局（连同流派配置一起回放）">下一局 ▶</button>
+    <span id="hPos" style="font-size:12px;color:var(--muted);align-self:center" title="起局历史：当前位置 / 总数（最多 50 局）">0/0</span>
+    <button class="ghost" onclick="sharePan()" title="把当前起局参数编进链接（不含解读文本）">分享此局</button>
     <button class="ghost" onclick="savePan()">存档</button>
     <button class="ghost" onclick="toggleSaves()">读档</button>
   </div>
@@ -146,7 +174,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
     </div>
     <div id="savesList"></div>
   </div>
-  <div class="note warn">当前仅实现 <b>拆补法</b>（现代排盘软件主流，如元亨利贞默认）。<b>置闰法（超神接气）</b> 与 <b>飞盘派</b> 尚未实现，见文末路线图。中宫规则：<b>天禽恒随天芮</b>，中宫干寄于天芮所临之宫并显。</div>
+  <div class="note warn">流派配置：<b>排盘派别</b>（转盘/飞盘）、<b>定局法</b>（拆补/置闰/茅山）、<b>天禽寄宫</b>（随天芮/阳艮阴坤）三组可组合，选后立即生效并随存档一起保存。<b>飞盘派</b>中五宫入序（有星有神无门），不做寄宫；<b>置闰法</b>按符头块走查，超神过九于芒种/大雪置闰，1717 年冬至上元符头（1717-12-16 甲子）之前的日期自动回退拆补法。中宫规则（转盘）：<b>天禽恒随天芮</b>，中宫干寄于天禽所临之宫并显。</div>
 </div>
 
 <div id="out"></div>
@@ -189,6 +217,34 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
     <b>前端直连</b>（本地双击打开默认）：密钥仅存本机 localStorage，请求直发所填接口、不经中间服务器；要求接口支持 OpenAI 兼容 <code>/chat/completions</code> 与 <code>stream:true</code>，
     若报 <b>CORS 跨域</b>说明该接口不允许浏览器直调。
     多轮追问沿用同一盘面（模型侧受「追问沿用原盘」契约约束）；盘面事实不可改写、主次次序、现实边界三条契约随提示词下发。
+  </div>
+</div>
+
+<div class="card" id="reviewCard" style="display:none">
+  <h2>七、案例复盘 <span style="font-size:11px;color:#6f6e68;font-weight:400">（P2-3 · 事后回填 + 翻局对照）</span></h2>
+  <div id="rvInfo" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+  <div class="row" style="align-items:flex-end">
+    <div class="field" style="flex:1">
+      <label>事后回填（自由文本：事情后来怎么走的、哪个符号应了）</label>
+      <textarea id="rvFeedback" rows="3" style="width:100%" placeholder="例：三日后对方主动来电商量折扣，应在生门…"></textarea>
+    </div>
+    <div class="field" style="width:130px">
+      <label>应验与否</label>
+      <select id="rvVerified" style="width:100%">
+        <option value="">待验</option>
+        <option value="yes">应验</option>
+        <option value="no">未应验</option>
+      </select>
+    </div>
+    <button onclick="saveReview()">保存回填</button>
+    <button class="ghost" onclick="cloudToLocal()" title="云端存档只读，转存本机后才能回填">转存本机</button>
+  </div>
+  <div id="rvMsg" class="note" style="display:none"></div>
+  <div id="rvAi"></div>
+  <div class="legend" style="text-align:left;margin-top:8px">
+    复盘写回该存档条目的 <code>feedback</code> / <code>verified</code> 两个可选字段（本地 <code>qm_saves_v1</code>；旧档没有这两个字段，读不到即为空）。
+    换起新局后本卡自动收起，避免回填张冠李戴；「当时的 AI 解读」是存档那一刻的快照，只读回看。
+    配合上方「◀ 上一局 / 下一局 ▶」可在最近 50 局之间连同流派配置一起翻回对照。
   </div>
 </div>
 

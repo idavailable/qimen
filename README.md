@@ -1,6 +1,7 @@
 # 奇门遁甲决策工具 · qimen
 
-时家奇门（**转盘派 · 拆补法定局**）排盘 + 格局检出 + 用神取法 + AI 流式解读。
+时家奇门排盘 + 格局检出 + 用神取法 + AI 流式解读。**流派可组合**：转盘派/飞盘派 ×
+拆补法/置闰法/茅山法 × 天禽寄宫（随天芮 / 阳艮阴坤）。
 纯前端排盘（双击 `public/index.html` 即可用，无网络请求），线上部署在 Cloudflare Pages，
 解读可选走 **服务端代理**（`/api/interpret`，密钥留服务端，解读写入 D1）。
 
@@ -20,15 +21,23 @@ public/                 ← 部署根（pages_build_output_dir），只有这些
   yongshen.js           M3 用神取法（10 类问事）
   prompt.js             系统提示词唯一来源（前后端共用，test.js 有同步校验）
   interpret.js          M4 盘面→提示词 + SSE 流式读取
+  manifest.webmanifest  PWA 清单（第十一轮新增）
+  sw.js                 Service Worker：离线缓存，/api/ 永不缓存、只拦同源 GET（第十一轮新增）
+  icon-192.png / icon-512.png  洛书九宫图标（tools/make_icons.py 纯 Python 生成，无第三方依赖）
 functions/api/          ← Pages Functions（不进静态产物）
   interpret.js          流式解读代理（服务端密钥 / 自带密钥 BYOK）+ D1 留痕
   models.js             模型清单（按密钥可用性标注，支持后台自定义供应商）
   records.js            D1 解读记录：列表 / 详情 / 删除
+  saves.js              D1 盘面存档：列表 / 全量（口令）/ 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（418 项）
-sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（119 项）
+test.js                 回归测试（541 项）
+sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（128 项）
 _audit_dom.js           jsdom 真实 DOM 复核（10 项：换局类别/停止文案/换盘历史/芯片覆盖/对比列等高滚动）
+_smoke_p13.js           jsdom 渲染冒烟（42 项：六种流派组合逐一 cast + 中五宫规则 + 读档回放）
+_smoke_p22.js           jsdom 冒烟（23 项：SW 注册协议判定 + #p= 分享还原 + manifest/sw 静态约束）
+_smoke_p23.js           jsdom 冒烟（75 项：翻局回放含流派配置 + 复盘回填/旧档透明/云端转存）
+tools/make_icons.py     PWA 图标生成（zlib+struct 手写 PNG）
 schema.sql              D1 建表
 wrangler.toml           Pages 配置（含 D1 绑定）
 ```
@@ -41,6 +50,12 @@ wrangler.toml           Pages 配置（含 D1 绑定）
   每次解读写入 D1（IP 只存 SHA-256 前 16 位）。
 
 支持任意 OpenAI 兼容接口（`/chat/completions` + `stream:true`）：DeepSeek、Moonshot、通义、GLM、中转站等。
+
+**离线与分享**：首次打开后 Service Worker 缓存全部静态资源，断网可继续排盘（`/api/` 请求永不缓存）；
+「分享此局」把当前起局参数编进地址栏 `#p=` 链接，发给他人打开即得同一盘（不含解读文本）。
+
+**复盘工作流**：起局 → 存档（同时快照当时的 AI 解读）→ 事情过后在读档条目里填「事后回填」与应验与否；
+「◀ 上一局 / 下一局 ▶」可在最近 50 局之间连同流派配置翻回对照。
 
 ## 部署
 
@@ -98,10 +113,16 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test          # 418 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推）
-npm run ui:verify # 119 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
+npm test           # 541 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推 + P1-3 流派配置 90 项）
+npm run ui:verify  # 128 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
 node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
+node _smoke_p13.js # 42 项 P1-3 渲染冒烟（六种流派组合 + 中五宫规则 + 读档回放）
+node _smoke_p22.js # 23 项 P2-2 冒烟（SW 注册协议判定 + #p= 分享还原 + manifest/sw 静态约束）
+node _smoke_p23.js # 75 项 P2-3 冒烟（翻局回放含流派配置 + 复盘回填/旧档透明/云端转存）
 ```
+
+> jsdom 冒烟三个脚本需要 jsdom：`NODE_PATH=<托管 node workspace>/node_modules node _smoke_p1x.js`
+> （托管 workspace 无 jsdom 时依次尝试 `~/.workbuddy/binaries/node/workspace/node_modules`）。
 
 ## 2026-10-10 全量审计修复（P1×6 + P2×7 + P3 若干，依据《审计报告-2026-10-10.md》）
 
@@ -172,7 +193,18 @@ node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHT
 ## 路线图
 
 - ✅ M1 起局引擎 · M2 格局库（十干克应 81 格等）· M3 用神取法 · M4 AI 流式解读（前端直连 + 服务端代理 + D1）
-- ⏳ 置闰法（超神接气）· 飞盘派 —— 有流派争议，待《兵法奇门》第二部核校后再定
+- ✅ 置闰法（超神接气）· 飞盘派 —— 第十一轮已按《奇门遁甲统宗》康熙五十七算例等权威源落实为可配置流派
+- ⏳ 年命入局（年干支已备表单、未参与盘局）
+
+## 第十一轮 · 流派配置 / PWA 分享 / 案例复盘（2026-10-14）
+
+| 项 | 内容 |
+|---|---|
+| P1-3 流派配置 | 排盘派别（**转盘 / 飞盘**）× 定局法（**拆补 / 置闰 / 茅山**）× 天禽寄宫（**随天芮 / 阳艮阴坤**）三组下拉，选后立即生效并随存档/分享一起保存。飞盘派：九星/八门/九神按洛书数序飞布、八门跳过中五、中五宫有星有神无门且不寄宫；置闰法：符头块走查状态机（超神/接气/正授/置闰，锚点 1717-12-16 甲子，康熙五十七芒种置闰算例复现，锚点前日期自动回退拆补）；茅山法：交节日当天起算每 5 日一元、不看符头。`test.js` 新增第 32 节 90 项（飞盘算例四源一致逐宫比对、置闰全链、三法同日分歧、寄宫变体、`buildPanText` 四种口吻） |
+| P2-2 PWA 与分享 | `manifest.webmanifest` + `sw.js`（离线缓存；`/api/` 永不缓存、只拦同源 GET、非 GET 透传；导航离线回退首页）· 起局参数编成 `#p=` base64url 链接（TextEncoder 保中文），打开即还原并自动起局 · http(s) 才注册 SW，本地双击 `file://` 自动跳过 · 图标由 `tools/make_icons.py` 纯 Python 手写 PNG（洛书九宫，无 Pillow/字体依赖） |
+| P2-3 复盘与翻局 | 存档条目增加可选 `feedback`（事后回填）/ `verified`（应验/未应验/待验）字段，AI 列下方「七、案例复盘」写回本机存档（旧档无字段即空，透明兼容；换盘自动脱离防张冠李戴）· 存档同时快照**当时的 AI 解读**，读档连同盘面只读回看 · 云端存档可「转存本机」后回填 · 「◀ 上一局 / 下一局 ▶」在最近 50 局间翻动，**连同流派配置一起回放**（同参不重复压栈、中间起新局丢弃分支、校验用局不入栈） |
+| 测试 | `test.js` **541/541** · 沙箱 **128/128** · jsdom 复核 **10/10** · P1-3 冒烟 **42/42** · P2-2 冒烟 **23/23** · P2-3 冒烟 **75/75** |
+| 冒烟抓到的真 bug | ① `restoreFromHash` IIFE 在模块求值期同步 `cast()`，`relBadge` 等后置 `const` 尚在 TDZ → ReferenceError（改为只还原参数、由 init() 末尾起局）；② `cloudToLocal()` 守卫条件写反（`curSaveId[0]!=='L'` 对云端档恒真直接 return） |
 
 ## 第十轮 · 改进路线落实（2026-10-14）
 

@@ -1,6 +1,6 @@
 /* ============================================================
    奇门遁甲起局引擎 · engine.js
-   时家奇门 / 转盘派 / 拆补法定局
+   时家奇门 / 转盘派·飞盘派 / 拆补法·置闰法·茅山法
    浏览器与 Node 双环境可用
    ============================================================ */
 (function(root,factory){
@@ -30,6 +30,11 @@ const DOORS=RING.map(p=>PAL[p].door);    // 休 生 伤 杜 景 死 惊 开
 const GRID=[4,9,2,3,5,7,8,1,6];          // 界面九宫格（南下北上）
 const YIBU=['戊','己','庚','辛','壬','癸','丁','丙','乙']; // 六仪+三奇 布盘序
 const GODS=['值符','螣蛇','太阴','六合','白虎','玄武','九地','九天'];
+/* 飞盘派九神（洛书数序含中五；阳遁勾陈/太常/朱雀，阴遁白虎/太常/玄武） */
+const GODS9_YANG=['值符','螣蛇','太阴','六合','勾陈','太常','朱雀','九地','九天'];
+const GODS9_YIN =['值符','螣蛇','太阴','六合','白虎','太常','玄武','九地','九天'];
+const STAR_HOME={};for(let p=1;p<=9;p++)STAR_HOME[PAL[p].star]=p;  // 星 → 本宫（飞盘天盘干用）
+const DOOR_FEI=[1,2,3,4,6,7,8,9];    // 飞盘八门飞布序：洛书数序跳过中五（阳 4→6，阴 6→4）
 const XUN_YI={'甲子':'戊','甲戌':'己','甲申':'庚','甲午':'辛','甲辰':'壬','甲寅':'癸'};
 const DOOR_WX={'休门':'水','生门':'土','伤门':'木','杜门':'木','景门':'火','死门':'土','惊门':'金','开门':'金'};
 const STAR_WX={'天蓬':'水','天芮':'土','天冲':'木','天辅':'木','天禽':'土','天心':'金','天柱':'金','天任':'土','天英':'火'};
@@ -138,6 +143,123 @@ function yuanOf(dz){
   return 2;
 }
 
+/* ---------- 定局（茅山法 · 又称均分法） ----------
+   只重节气、不管符头：交节日当天起算每 5 日一元（第 1–5 上元 / 6–10 中元 / 11–15 下元），
+   局数仍取该节气三元局表。jdn 与交节日均为东八区日历日（Math.floor(jd+8/24+0.5)）。 */
+function maoshanJu(cur,jdn){
+  const termDay=Math.floor(cur.jd+8/24+0.5);
+  const diff=jdn-termDay;
+  const yuan=Math.min(2,Math.max(0,Math.floor(diff/5)));
+  return {method:'maoshan',term:cur.name,yuan,
+          dun:YANG_TERMS.has(cur.name)?1:-1,ju:JU[cur.name][yuan],
+          rule:'茅山',blockStart:termDay,fuTou:null,fuTouBack:null,juDayDiff:diff};
+}
+
+/* ---------- 定局（置闰法 · 超神接气） ----------
+   符头块走查状态机：局界严格在符头日（每 5 日一换），三元连着走；
+   每到一个新节气，其上元起点 = 上一节气上元起点 + 15 日；
+   若当前节气 ∈ {芒种,大雪} 且下一节气交节日 − 该起点 ≥ 8 日（超不过九），
+   先插一组闰奇（重复本节气三元，+15 日）再换节气。
+   锚点：《奇门遁甲统宗》康熙五十六年冬至「去符头甲午日共超七日」
+   → 1717 年冬至上元符头 = 冬至前 7 日（以此为起点，康熙五十七芒种自动触发置闰）。 */
+const ZHIRAN_TERMS=['冬至','小寒','大寒','立春','雨水','惊蛰','春分','清明','谷雨','立夏','小满','芒种',
+                    '夏至','小暑','大暑','立秋','处暑','白露','秋分','寒露','霜降','立冬','小雪','大雪'];
+const RUN_TERMS=new Set(['芒种','大雪']);
+const _zhYearTerms={};     // year → termsOfYear(year) 缓存
+const _zhYearState={};     // year → {termIdx,blockStart} 年初走查状态缓存
+function zhiranTermsOf(y){
+  if(!_zhYearTerms[y])_zhYearTerms[y]=termsOfYear(y);
+  return _zhYearTerms[y];
+}
+function zhiranTermJD(termIdx){
+  /* 走查序列：termIdx 0 = 1717 冬至；1..24 = 1718（小寒…冬至）；25..48 = 1719 … */
+  const y=termIdx===0?1717:1717+Math.ceil(termIdx/24);
+  const name=ZHIRAN_TERMS[termIdx%24];
+  const t=zhiranTermsOf(y).filter(x=>x.name===name)[0];
+  return t?t.jd:null;
+}
+function zhiranAnchor(){
+  /* 1717 冬至上元符头：冬至前 7 日吸附到最近符头日（支∈子卯午酉）。
+     1717 年即 1717-12-16 甲子日——以此为起点走查，
+     康熙五十七年芒种三元为己酉/甲申/己丑、夏至上元符头甲子距夏至 8 日、
+     置闰后夏至上局己卯，与《奇门遁甲统宗》算例逐项吻合。 */
+  const dzDay=Math.floor(zhiranTermJD(0)+8/24+0.5);
+  let j=dzDay-7;
+  for(let d=0;d<=2;d++){
+    if([0,3,6,9].includes(dayGZIndex(j-d)%12))return j-d;
+    if([0,3,6,9].includes(dayGZIndex(j+d)%12))return j+d;
+  }
+  return j;
+}
+/* 年初状态：从锚点（或更近的已缓存年）走到「该年元旦所在块」的走查位置 */
+function zhiranYearState(y){
+  if(_zhYearState[y]!==undefined)return _zhYearState[y];
+  const anchor=zhiranAnchor();
+  const jan1=Math.floor(toJD(y,1,1,0,0,0)+0.5);
+  /* 元旦早于锚点（仅 1717 年可能）：走查无从起步，直接以锚点块为年初状态，
+     由 zhiranJu 自身向前走查定位（否则会向后空转成脏状态并污染后续年份缓存） */
+  if(jan1<anchor){_zhYearState[y]={termIdx:0,blockStart:anchor};return _zhYearState[y];}
+  let fromY=1717,st={termIdx:0,blockStart:anchor};
+  for(const cy of Object.keys(_zhYearState)){const n=Number(cy);if(n<=y&&n>fromY){fromY=n;st=_zhYearState[n];}}
+  let termIdx=st.termIdx,blockStart=st.blockStart;
+  let guard=0;
+  /* 止于「元旦落在本节气三元内」：blockStart <= jan1 < blockStart+15 */
+  while(guard++<100000&&!(blockStart<=jan1&&jan1<blockStart+15)){
+    const curTerm=ZHIRAN_TERMS[termIdx%24];
+    const plannedNext=blockStart+15;
+    if(RUN_TERMS.has(curTerm)){
+      const njd=zhiranTermJD(termIdx+1);
+      if(njd!==null&&Math.floor(njd+8/24+0.5)-plannedNext>=8){
+        blockStart=plannedNext+15;termIdx++;continue;
+      }
+    }
+    blockStart=plannedNext;termIdx++;
+  }
+  _zhYearState[y]={termIdx,blockStart};
+  return _zhYearState[y];
+}
+/* 置闰定局：返回目标日所在符头块 {method,term,yuan,dun,ju,rule,blockStart,fuTou,fuTouBack} */
+function zhiranJu(jdn){
+  const anchor=zhiranAnchor();
+  if(jdn<anchor)return null;                        // 锚点之前：调用方回退拆补
+  const y=new Date(Math.round((jdn-2440587.5)*86400000)).getUTCFullYear();
+  const st=zhiranYearState(y);
+  let termIdx=st.termIdx,blockStart=st.blockStart;
+  let guard=0;
+  while(guard++<100000){
+    const curTerm=ZHIRAN_TERMS[termIdx%24];
+    const plannedNext=blockStart+15;
+    if(jdn<plannedNext){
+      /* 目标在本节气三元内 */
+      const cd=Math.floor(zhiranTermJD(termIdx)+8/24+0.5);      // 本节气交节日
+      const b=blockStart;
+      /* 正授：上元符头即交节日；超神：符头早于交节（局先至）；
+         接气：交节已过而符头未到（气先至），仍以该三元应之 */
+      let rule='正授';
+      if(b<cd)rule='超神'+(cd-b)+'日';
+      else if(b>cd)rule='接气';
+      return {method:'zhiran',term:curTerm,yuan:Math.floor((jdn-b)/5),
+              dun:YANG_TERMS.has(curTerm)?1:-1,ju:JU[curTerm][Math.floor((jdn-b)/5)],
+              rule,blockStart:b,fuTou:gz(dayGZIndex(b)),fuTouBack:cd-b};
+    }
+    if(RUN_TERMS.has(curTerm)){
+      const cdNext=Math.floor(zhiranTermJD(termIdx+1)+8/24+0.5);
+      if(cdNext-plannedNext>=8){
+        /* 置闰：闰奇组占 [plannedNext, plannedNext+15)，仍用本节气局 */
+        if(jdn<plannedNext+15){
+          const off=jdn-plannedNext;
+          return {method:'zhiran',term:curTerm,yuan:Math.floor(off/5),
+                  dun:YANG_TERMS.has(curTerm)?1:-1,ju:JU[curTerm][Math.floor(off/5)],
+                  rule:'置闰',blockStart:plannedNext,fuTou:gz(dayGZIndex(plannedNext)),fuTouBack:cdNext-plannedNext};
+        }
+        blockStart=plannedNext+15;termIdx++;continue;
+      }
+    }
+    blockStart=plannedNext;termIdx++;
+  }
+  return null;
+}
+
 /* ---------- 飞宫 ---------- */
 function fly(start,steps,forward){
   let p=start;
@@ -148,10 +270,15 @@ const ringIdx=p=>RING.indexOf(p);
 
 /* ============================================================
    排盘核心
-   入参: dun(1阳/-1阴) ju(1-9) hourIdx(时干支序) jg(中宫寄) zfOverride?
+   入参: dun(1阳/-1阴) ju(1-9) hourIdx(时干支序) jg(中宫寄) opts{pan,tianqin}
+   pan:     'zhuan' 转盘（默认，与历史版本逐字等价） | 'fei' 飞盘
+   tianqin: 'suirui' 天禽恒随天芮（默认） | 'yangen-yinkun' 阳遁寄艮八、阴遁寄坤二
    ============================================================ */
-function paipan(dun,ju,hourIdx,jg){
+function paipan(dun,ju,hourIdx,jg,opts){
+  opts=opts||{};
   jg=jg||2;
+  const pan=(opts.pan==='fei')?'fei':'zhuan';
+  const tianqin=(opts.tianqin==='yangen-yinkun')?'yangen-yinkun':'suirui';
   const forward=dun===1;
   const di={};
   for(let i=0;i<9;i++){
@@ -181,35 +308,70 @@ function paipan(dun,ju,hourIdx,jg){
   const shift=((ringIdx(zfTo)-ringIdx(zfFrom))%8+8)%8;
 
   const tian={},tianStar={};
-  for(let i=0;i<8;i++){
-    const fromP=RING[((i-shift)%8+8)%8];
-    tian[RING[i]]=di[fromP];
-    tianStar[RING[i]]=PAL[fromP].star;
+  let guest=null;
+  if(pan==='fei'){
+    /* ---- 飞盘：九星按洛书数序飞布（阳顺阴逆，含中五宫），每星带其本宫地盘干 ---- */
+    const starSeq=[1,2,3,4,5,6,7,8,9].map(p=>PAL[p].star);   // 蓬芮冲辅禽心柱任英
+    const zfStarIdx=starSeq.indexOf(zfStar);
+    for(let i=0;i<9;i++){
+      const pal=forward?((zfTo-1+i)%9)+1:(((zfTo-1-i)%9)+9)%9+1;
+      const sIdx=((zfStarIdx+(forward?i:-i))%9+9)%9;
+      tianStar[pal]=starSeq[sIdx];
+      tian[pal]=di[STAR_HOME[starSeq[sIdx]]];      // 星带本宫地盘干
+    }
+    guest=null;                                     // 飞盘中五入序，不做寄宫
+  }else{
+    for(let i=0;i<8;i++){
+      const fromP=RING[((i-shift)%8+8)%8];
+      tian[RING[i]]=di[fromP];
+      tianStar[RING[i]]=PAL[fromP].star;
+    }
+    tian[5]=di[5]; tianStar[5]='天禽';
+    // 天禽寄宫：中宫干【寄】于天禽所临之宫的天盘（并存并显，不替换主干）
+    const guestBase=(tianqin==='yangen-yinkun')?(forward?8:2):2;
+    const guestPal=RING[(ringIdx(guestBase)+shift)%8];
+    guest={pal:guestPal,gan:di[5],star:'天禽',isZF:zfPal===5};
   }
-  tian[5]=di[5]; tianStar[5]='天禽';
-  // 天禽恒随天芮：中宫干【寄】于天芮所临之宫的天盘（并存并显，不替换主干）
-  const guestPal=RING[(ringIdx(2)+shift)%8];
-  const guest={pal:guestPal,gan:di[5],star:'天禽',isZF:zfPal===5};
 
   // 八门：值使自原宫按洛书飞 n-1 步（中宫亦计一步），落宫后随转
   let zsLuo=fly(zfFrom,n-1,forward);
   if(zsLuo===5) zsLuo=jg;
-  const doorShift=((ringIdx(zsLuo)-ringIdx(zfFrom))%8+8)%8;
   const door={};
-  for(let i=0;i<8;i++) door[RING[i]]=DOORS[((i-doorShift)%8+8)%8];
-  door[5]='—';
-
-  // 八神：值符神起于值符落宫，阳顺阴逆
-  const god={};
-  const gStart=ringIdx(zfTo);
-  for(let i=0;i<8;i++){
-    const pos=forward?(gStart+i)%8:((gStart-i)%8+8)%8;
-    god[RING[pos]]=GODS[i];
+  if(pan==='fei'){
+    /* ---- 飞盘：八门按洛书数序跳过中五飞布（阳遁 4→6，阴遁 6→4） ---- */
+    const doorSeq=DOOR_FEI.map(p=>PAL[p].door);    // 休 死 伤 杜 开 惊 生 景
+    const zsIdx=doorSeq.indexOf(zsDoor);
+    const zsLuoIdx=DOOR_FEI.indexOf(zsLuo);
+    for(let i=0;i<8;i++){
+      const pal=forward?DOOR_FEI[(zsLuoIdx+i)%8]:DOOR_FEI[(zsLuoIdx-i+8)%8];
+      door[pal]=doorSeq[((zsIdx+(forward?i:-i))%8+8)%8];
+    }
+    door[5]='—';
+  }else{
+    const doorShift=((ringIdx(zsLuo)-ringIdx(zfFrom))%8+8)%8;
+    for(let i=0;i<8;i++) door[RING[i]]=DOORS[((i-doorShift)%8+8)%8];
+    door[5]='—';
   }
-  god[5]='—';
 
-  const R={dun,ju,forward,di,tian,tianStar,door,god,guest,
-          zfPal,zfStar,zfFrom,zfTo,zsDoor,zsPal:zfFrom,zsLuo,doorShift,shift,n,
+  // 八神（转盘）/ 九神（飞盘）：值符神起于值符落宫，阳顺阴逆
+  const god={};
+  if(pan==='fei'){
+    const godSeq=forward?GODS9_YANG:GODS9_YIN;     // 含中五，god[5] 有值
+    for(let i=0;i<9;i++){
+      const pal=forward?((zfTo-1+i)%9)+1:(((zfTo-1-i)%9)+9)%9+1;
+      god[pal]=godSeq[i];
+    }
+  }else{
+    const gStart=ringIdx(zfTo);
+    for(let i=0;i<8;i++){
+      const pos=forward?(gStart+i)%8:((gStart-i)%8+8)%8;
+      god[RING[pos]]=GODS[i];
+    }
+    god[5]='—';
+  }
+
+  const R={dun,ju,forward,di,tian,tianStar,door,god,guest,pan,tianqin:(pan==='fei'?null:tianqin),
+          zfPal,zfStar,zfFrom,zfTo,zsDoor,zsPal:zfFrom,zsLuo,doorShift:(pan==='fei'?null:((ringIdx(zsLuo)-ringIdx(zfFrom))%8+8)%8),shift,n,
           xunStart,xunName,xunYi,hourGan,hourZhi,hourIdx,jg,jiGuest:di[5],tGanPal,
           kong:{hour:{zhi:xunKongZhi(xunStart),pal:xunKongPal(xunStart)}}};
   R.geju=geju(R);
@@ -444,7 +606,9 @@ function geju(R,dayGan){
 
 /* ============================================================
    完整起局：公历时间 → 盘
-   opts: {lon, clock:'std'|'local'|'true', ziSwap:bool, jg}
+   opts: {lon, clock:'std'|'local'|'true', ziSwap:bool, jg,
+          method:'chaibu'|'zhiran'|'maoshan', pan:'zhuan'|'fei',
+          tianqin:'suirui'|'yangen-yinkun'}
    ============================================================ */
 function cast(y,mo,d,h,mi,opts){
   opts=opts||{};
@@ -452,6 +616,9 @@ function cast(y,mo,d,h,mi,opts){
   const clock=opts.clock||'true';
   const ziSwap=opts.ziSwap!==false;
   const jg=opts.jg||2;
+  const pan=(opts.pan==='fei')?'fei':'zhuan';
+  const tianqin=(opts.tianqin==='yangen-yinkun')?'yangen-yinkun':'suirui';
+  const method=(opts.method==='zhiran')?'zhiran':(opts.method==='maoshan')?'maoshan':'chaibu';
 
   const jdUTC=toJD(y,mo,d,h-8,mi,0);
   const lonCorr=(lon-120)*4;
@@ -484,18 +651,32 @@ function cast(y,mo,d,h,mi,opts){
   let cur=null,next=null;
   for(const t of list){ if(t.jd<=jdUTC)cur=t; else if(!next)next=t; }
 
-  // 拆补定局
-  const ft=findFuTou(dayIdx);
-  const yuan=yuanOf(ft.idx%12);
-  const isYang=YANG_TERMS.has(cur.name);
-  const dun=isYang?1:-1;
-  const ju=JU[cur.name][yuan];
+  // 定局（按 method 流派；zhiran 在 1717 锚点之前回退拆补）
+  let J;
+  if(method==='maoshan'){
+    J=maoshanJu(cur,jdn);
+  }else if(method==='zhiran'){
+    J=zhiranJu(jdn);
+    if(!J){
+      const ft=findFuTou(dayIdx);
+      const yuan=yuanOf(ft.idx%12);
+      J={method:'chaibu',term:cur.name,yuan,dun:YANG_TERMS.has(cur.name)?1:-1,ju:JU[cur.name][yuan],
+         rule:'拆补（置闰锚点前回退）',blockStart:null,fuTou:gz(ft.idx),fuTouBack:ft.back};
+    }
+  }else{
+    const ft=findFuTou(dayIdx);
+    const yuan=yuanOf(ft.idx%12);
+    J={method:'chaibu',term:cur.name,yuan,dun:YANG_TERMS.has(cur.name)?1:-1,ju:JU[cur.name][yuan],
+       rule:'拆补',blockStart:null,fuTou:gz(ft.idx),fuTouBack:ft.back};
+  }
 
-  const R=paipan(dun,ju,hourIdx,jg);
+  const R=paipan(J.dun,J.ju,hourIdx,jg,{pan,tianqin});
   R.meta={jdUTC,jdAdj,corrMin,lonCorr,eot,ly,lm,ld,lh,lmi,lon,clock,ziSwap,jg,
           dayGZ:gz(dayIdx),hourGZ:gz(hourIdx),dayIdx,hourIdx,
           term:cur.name,termJD:cur.jd,nextTerm:next?next.name:null,nextJD:next?next.jd:null,
-          fuTou:gz(ft.idx),fuTouBack:ft.back,yuan,yuanName:YUAN_NAME[yuan]};
+          method:J.method,pan,tianqin,rule:J.rule,juTerm:J.term,blockStart:J.blockStart,
+          fuTou:J.fuTou,fuTouBack:J.fuTouBack,juDayDiff:J.juDayDiff,
+          yuan:J.yuan,yuanName:YUAN_NAME[J.yuan]};
   // 年干支 / 空亡 / 驿马 / 落宫
   /* F2 + F21：干支年以**立春真实时刻**为界（不是以「最近节气是否小寒/大寒」为界）。
      元旦至小寒前这几天，最近节气是**上一年冬至**，同样在立春之前，年干支/月干支/年马星
@@ -521,11 +702,13 @@ function cast(y,mo,d,h,mi,opts){
   return R;
 }
 
-return {TG,DZ,PAL,RING,DOORS,GRID,YIBU,GODS,JU,YANG_TERMS,YUAN_NAME,TERMS,
+return {TG,DZ,PAL,RING,DOORS,GRID,YIBU,GODS,GODS9_YANG,GODS9_YIN,STAR_HOME,DOOR_FEI,
+        JU,YANG_TERMS,YUAN_NAME,TERMS,
         toJD,jdToUTC,sunLon,findLon,eqOfTime,termsOfYear,
         dayGZIndex,gz,hourZhi,hourTG,hourIdxOf,
         findFuTou,yuanOf,fly,ringIdx,paipan,geju,cast,ke,
         DOOR_WX,STAR_WX,TG_WX,XUN_YI,
         ZHI_PAL,xunKongZhi,xunKongPal,maXingZhi,maXingPal,yearGZIndex,dunGan,
-        KEYING,SANYING,QI_MU,YI_JI_XING,OPP,JI_MEN,SAN_QI};
+        KEYING,SANYING,QI_MU,YI_JI_XING,OPP,JI_MEN,SAN_QI,
+        ZHIRAN_TERMS,RUN_TERMS,maoshanJu,zhiranJu,zhiranAnchor,zhiranTermJD};
 });

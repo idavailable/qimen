@@ -3,6 +3,83 @@
    ============================================================ */
 const {PAL,GRID,gz,DOOR_WX,ke,TG_WX}=QM;
 let curR=null; // 当前解盘对象（供用神区联动）
+let hashRestored=false; // 本次加载是否由 #p= 分享链接还原过参数（init 据此跳过 setNow）
+
+/* ---------- P2-2 分享链接：参数 ⇄ base64url（纯函数，沙箱可直接调） ----------
+   只用 location.hash（#p=...），不用 query —— 避免被 Pages 的 /api 路由
+   或缓存策略干扰，也保证本地双击 file:// 打开同样可用。
+   编的只是起局参数（日期/时间/经度/流派等），不含解读文本。 */
+const SHARE_KEYS=['date','time','lon','clock','zi','ji','pan','method','tq','cat','q'];
+/* UTF-8 安全的 base64url：TextEncoder 先转字节再 btoa，
+   否则问事文本含中文时 btoa 直接抛 InvalidCharacterError（返回空串）。 */
+const b64uEncode=s=>{
+  const bytes=new TextEncoder().encode(s);
+  let bin='';for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+};
+const b64uDecode=b=>{
+  const bin=atob(b);
+  const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+};
+function encodeParams(p){
+  if(!p||typeof p!=='object')return '';
+  const o={};
+  for(const k of SHARE_KEYS){if(p[k]!==undefined&&p[k]!==null&&p[k]!=='')o[k]=String(p[k]);}
+  if(!Object.keys(o).length)return '';
+  try{return b64uEncode(JSON.stringify(o));}catch(e){return '';}
+}
+function decodeParams(h){
+  if(!h||typeof h!=='string')return null;
+  const m=h.match(/(?:^#|&)p=([A-Za-z0-9\-_]+)/);
+  if(!m)return null;
+  let json='';
+  try{json=b64uDecode(m[1]);}catch(e){return null;}
+  let o=null;
+  try{o=JSON.parse(json);}catch(e){return null;}
+  if(!o||typeof o!=='object')return null;
+  /* 只认白名单键，脏键直接丢弃（hash 是人手可改的） */
+  const out={};
+  for(const k of SHARE_KEYS){if(typeof o[k]==='string'&&o[k]!=='')out[k]=o[k];}
+  return out;
+}
+/* 分享入口：写 hash + 复制链接；失败（无剪贴板权限/file://）时退回地址栏可见即可 */
+function sharePan(){
+  if(!curR||!curR.meta||curR.meta.test){alert('请先以真实日期时间起一局，再分享');return;}
+  const p=saveParams();
+  if(!p.date||!p.time){alert('请先以真实日期时间起一局，再分享');return;}
+  const enc=encodeParams(p);
+  if(!enc){alert('参数编码失败');return;}
+  const url=location.href.split('#')[0]+'#p='+enc;
+  try{history.replaceState(null,'',url);}catch(e){location.hash='p='+enc;}
+  const done=()=>castMsg('分享链接已就绪（已写入地址栏）：'+url);
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(done,()=>castMsg('分享链接（复制失败，请手动复制地址栏）：'+url));
+  }else castMsg('分享链接（请手动复制地址栏）：'+url);
+}
+/* ---------- P2-2 Service Worker：http(s) 才注册，file:// 必须跳过 ---------- */
+(function registerSW(){
+  if(!('serviceWorker' in navigator))return;
+  if(!location.protocol||location.protocol.indexOf('http')!==0)return; // file:// 跳过
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js').catch(()=>{/* 离线能力缺失不影响排盘 */});
+  });
+})();
+/* 打开时若带 #p=...：还原参数（读档白名单逻辑复用 loadParams），
+   置 hashRestored，init() 便不再用「现在」覆盖分享链接带来的时刻。
+   注意：此处只还原、不 cast() —— 本 IIFE 运行于模块求值期，文件后部的
+   const/let（如 relBadge）尚在 TDZ，同步起局会抛 ReferenceError；
+   起局统一交给文件末尾的 init()。 */
+(function restoreFromHash(){
+  let p=null;
+  try{p=decodeParams(location.hash);}catch(e){p=null;}
+  if(!p)return;
+  loadParams(p);
+  if(document.getElementById('iDate').value&&document.getElementById('iTime').value){
+    hashRestored=true;
+  }
+})();
 
 function fmtJD(jd){
   const d=QM.jdToUTC(jd+8/24);
@@ -29,20 +106,31 @@ function cast(){
   const clock=document.getElementById('iClock').value;
   const ziSwap=document.getElementById('iZi').value==='23';
   const jg=parseInt(document.getElementById('iJi').value);
+  const pan=document.getElementById('iPan').value;
+  const method=document.getElementById('iMethod').value;
+  const tianqin=document.getElementById('iTq').value;
   const [Y,M,D]=ds.split('-').map(Number);
   const [h0,m0]=ts.split(':').map(Number);
-  const R=QM.cast(Y,M,D,h0,m0,{lon,clock,ziSwap,jg});
+  const R=QM.cast(Y,M,D,h0,m0,{lon,clock,ziSwap,jg,pan,method,tianqin});
   curR=R;
   render(R,R.meta);
   /* 可见反馈：同输入再起局时盘面逐字相同（页面加载时也已自动起过一局），
      没有任何提示会让人误以为「点了没反应」。这里每次都回一条摘要。 */
   castMsg('已起局 · '+castSummary(R));
+  /* P2-3 翻局入栈（replaying 回放中由 pushHist 自行跳过） */
+  pushHist();
+  /* 盘面已变：与复盘卡关联的存档若不是同一局就脱离，回填不会张冠李戴 */
+  syncReviewAttach();
 }
 function castSummary(R){
   const m=R.meta||{};
   const p2=n=>String(n).padStart(2,'0');
   let s=`${m.ly}-${p2(m.lm)}-${p2(m.ld)} ${p2(m.lh)}:${p2(m.lmi)}（${{std:'北京时间',local:'地方平太阳时',true:'真太阳时'}[m.clock]||''}）`;
   s+=` · ${R.dun===1?'阳遁':'阴遁'}${R.ju}局 · ${m.term}${m.yuanName||''}`;
+  s+=' · '+({zhuan:'转盘派',fei:'飞盘派'}[R.pan]||'转盘派');
+  s+=' · '+({chaibu:'拆补法',zhiran:'置闰法',maoshan:'茅山法'}[m.method]||'拆补法');
+  if(m.method==='zhiran'&&m.rule&&m.rule!=='正授')s+='（'+m.rule+'）';
+  if(R.pan==='zhuan'&&R.tianqin==='yangen-yinkun')s+=' · 天禽阳艮阴坤';
   try{
     const py=YS.pillars(R);
     if(py&&py.yearGZ&&py.yearGZ!=='?')s+=` · ${py.yearGZ}年 ${py.monthGZ}月 ${py.dayGZ}日 ${py.hourGZ}时`;
@@ -56,6 +144,49 @@ function castMsg(t){
   el.textContent=t||'';
 }
 
+/* ---------- P2-3 翻局：起局历史栈（连同流派配置一起回放） ----------
+   cast() 每次成功起局都把当次参数快照压栈（最多 50 条），
+   「上一局 / 下一局」在栈里前后移动并原样回放——流派三组（pan/method/tq）
+   与经度、早晚子时、问事类别都随栈走，不会回放到一半丢了配置。
+   回放走 replaying 标志屏蔽入栈，否则自己回放的参数会被当成新局再压一遍。 */
+const HIST_MAX=50;
+let historyStack=[],histPos=-1,replaying=false;
+/* 栈键：决定「是不是同一局」。不含问事文本 aiQ——只改问话不制造新局；
+   含 pan/method/tq/cat——改流派就是另一局，必须能翻回去对照。 */
+function histKey(p){
+  return [p.date,p.time,p.lon,p.clock,p.zi,p.ji,p.pan,p.method,p.tq,p.cat].join('|');
+}
+function pushHist(){
+  if(replaying)return;
+  let p=null;try{p=saveParams();}catch(e){return;}
+  if(!p||!p.date||!p.time)return; /* 校验用局/空输入不进历史 */
+  const k=histKey(p);
+  if(histPos>=0&&historyStack[histPos]&&historyStack[histPos].k===k){
+    historyStack[histPos].p=p; /* 同一局只更新问话等非键字段，不重复压栈 */
+    renderHistUI();return;
+  }
+  historyStack=historyStack.slice(0,histPos+1); /* 在中间起过新局 → 丢弃后面的分支 */
+  historyStack.push({k:k,p:p});
+  if(historyStack.length>HIST_MAX)historyStack.shift();
+  histPos=historyStack.length-1;
+  renderHistUI();
+}
+function histReplay(){
+  const h=historyStack[histPos];
+  if(!h)return;
+  replaying=true;
+  try{loadParams(h.p);cast();}finally{replaying=false;}
+  renderHistUI();
+}
+function prevCast(){if(histPos>0){histPos--;histReplay();}else renderHistUI();}
+function nextCast(){if(histPos<historyStack.length-1){histPos++;histReplay();}else renderHistUI();}
+function renderHistUI(){
+  const prev=document.getElementById('hPrev'),next=document.getElementById('hNext'),pos=document.getElementById('hPos');
+  if(prev)prev.disabled=histPos<=0;
+  if(next)next.disabled=histPos>=historyStack.length-1;
+  if(pos)pos.textContent=historyStack.length?((histPos+1)+'/'+historyStack.length):'0/0';
+}
+
 /* ---------- 存档 / 读档 ---------- */
 const SAVE_KEY='qm_saves_v1';
 const escHtml=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -63,6 +194,8 @@ function saveParams(){
   return {date:document.getElementById('iDate').value,time:document.getElementById('iTime').value,
     lon:document.getElementById('iLon').value,clock:document.getElementById('iClock').value,
     zi:document.getElementById('iZi').value,ji:document.getElementById('iJi').value,
+    pan:document.getElementById('iPan').value,method:document.getElementById('iMethod').value,
+    tq:document.getElementById('iTq').value,
     cat:(document.getElementById('yCat')||{}).value||'qiucai',
     q:(document.getElementById('aiQ')||{}).value||''};
 }
@@ -86,6 +219,11 @@ function loadParams(p){
   pickOpt('iClock',p.clock,'true');
   pickOpt('iZi',p.zi,'23');
   pickOpt('iJi',p.ji,'2');
+  /* 流派三组同样走白名单：旧档无 pan/method/tq 字段时回退默认（转盘/拆补/随芮），
+     与 cast() 的默认值一致，保证老存档读出来仍是原来那一盘 */
+  pickOpt('iPan',p.pan,'zhuan');
+  pickOpt('iMethod',p.method,'chaibu');
+  pickOpt('iTq',p.tq,'suirui');
   /* yCat 同样走白名单：旧档/云端档 cat 值不在当前 10 类里时，直接赋值会把选择框置空，
      随后 renderYongshen 读到 '' → YS.take 返回 null → t.items 抛错，整页渲染崩掉 */
   if(document.getElementById('yCat')&&p.cat!==undefined&&p.cat!==null&&p.cat!=='')
@@ -101,7 +239,11 @@ async function savePan(){
     if(py&&py.dayGZ&&py.dayGZ!=='?')label=py.yearGZ+'年 '+py.monthGZ+'月 '+py.dayGZ+'日 '+py.hourGZ+'时';
   }catch(e){}
   if(!label)label=aiPillars()||params.date+' '+params.time;
+  /* P2-3：把「当时的 AI 解读」一起存档——复盘时连同盘面原样回看。
+     云端 POST 只认白名单字段（label/pillars/params），ai 仅落本地。 */
+  const ai=collectAiTexts();
   const item={id:'L'+Date.now(),created_at:new Date().toLocaleString('zh-CN',{hour12:false}),label,pillars:label,params,src:'local'};
+  if(ai.length)item.ai=ai;
   let saves=[];try{saves=JSON.parse(localStorage.getItem(SAVE_KEY)||'[]');}catch(e){}
   saves.unshift(item);saves=saves.slice(0,100);
   try{localStorage.setItem(SAVE_KEY,JSON.stringify(saves));}catch(e){}
@@ -116,7 +258,25 @@ async function savePan(){
       }
     }catch(e){/* 云端失败仅本地 */}
   }
+  /* 复盘卡关联到刚存的这一条（换盘后由 cast() 自动脱离，见 attachReview） */
+  curSaveId=item.id;curSaveKey=histKey(item.params);
+  showReview(item);
   toggleSaves(true);
+}
+/* P2-3：收集当前 AI 解读各列的成品文本（流式中途只存到当前进度，保存即快照） */
+function collectAiTexts(){
+  const out=document.getElementById('aiOut');
+  if(!out)return [];
+  const cols=out.querySelectorAll?out.querySelectorAll('.ai-col'):[];
+  const list=[];
+  for(let i=0;i<cols.length;i++){
+    const head=cols[i].querySelector('.ai-col-head');
+    const body=cols[i].querySelector('.ai-col-body');
+    const text=body?(body.textContent||'').trim():'';
+    if(!text)continue;
+    list.push({model:(head?(head.textContent||'').trim():'')||('模型'+(i+1)),text:text.slice(0,8000)});
+  }
+  return list.slice(0,8); /* 本地 localStorage 有配额，最多留 8 列 */
 }
 function localSaves(){
   try{return JSON.parse(localStorage.getItem(SAVE_KEY)||'[]');}catch(e){return [];}
@@ -200,6 +360,7 @@ async function renderSaves(){
       <span style="cursor:pointer;flex:1" onclick="loadSave('${s.id}')" title="点击恢复盘面">
         <b>${escHtml(s.label)}</b>
         ${s.src==='cloud'?'<span class="chip zhong" style="margin:0 4px;position:static">云</span>':'<span class="chip zhong" style="margin:0 4px;position:static">本</span>'}
+        ${s.feedback?'<span class="chip zhong" style="margin:0 4px;position:static">'+(s.verified==='yes'?'应验':s.verified==='no'?'未应验':'已回填')+'</span>':''}
         <span style="color:var(--muted)">${escHtml(t)}${s.params&&s.params.q?' · '+escHtml(s.params.q.slice(0,30)):''} · ${escHtml(s.created_at)}</span>
       </span>
       <button class="ghost" style="padding:1px 8px" onclick="delSave('${s.id}')">删</button>
@@ -216,7 +377,12 @@ async function loadSave(id){
   }
   if(!s||!s.params){alert('存档不存在或已删除');renderSaves();return;}
   loadParams(s.params);
+  /* P2-3：先关联再起局——cast() 内的 syncReviewAttach 会核对「是不是同一局」，
+     顺序反了会被误判为换盘而立刻脱离 */
+  curSaveId=s.id;curSaveKey=histKey(s.params);
   cast();
+  /* 读档即进入该条的复盘视图（含事后回填与当时的解读回看） */
+  showReview(s);
   toggleSaves(false);
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -235,12 +401,100 @@ async function delSave(id){
   renderSaves();
 }
 
+/* ---------- P2-3 案例复盘：事后回填 + 当时的解读回看 ----------
+   复盘卡挂在 AI 列下方：存档/读档某局后出现。回填写进该存档条目的
+   feedback / verified 两个可选字段——旧档没有这两个字段，读不到即为空。
+   本地条目直接改 localStorage；云端条目只读，「转存本机」后再回填。 */
+let curSaveId=null,curSaveKey='';
+function rvMsg(t,warn){
+  const el=document.getElementById('rvMsg');
+  if(!el)return;
+  el.style.display=t?'block':'none';
+  el.className='note'+(warn?' warn':'');
+  el.textContent=t||'';
+}
+function detachReview(){
+  curSaveId=null;curSaveKey='';
+  const card=document.getElementById('reviewCard');
+  if(card)card.style.display='none';
+}
+/* cast() 后调用：当前盘面与复盘卡关联的存档不是同一局 → 脱离 */
+function syncReviewAttach(){
+  if(!curSaveId)return;
+  let p=null;try{p=saveParams();}catch(e){return;}
+  if(!p||!p.date||!p.time||histKey(p)!==curSaveKey)detachReview();
+}
+function findSave(id){
+  if(!id)return null;
+  if(id[0]==='L')return localSaves().find(x=>x.id===id)||null;
+  return (lastCloud||[]).find(x=>x.id===id)||null;
+}
+/* 打开某条存档的复盘视图：回填框带旧值，AI 区回看当时的成品快照 */
+function showReview(s){
+  const card=document.getElementById('reviewCard');
+  if(!card||!s)return;
+  card.style.display='block';
+  const fb=document.getElementById('rvFeedback'),vf=document.getElementById('rvVerified');
+  if(fb)fb.value=s.feedback||'';
+  if(vf)vf.value=s.verified||'';
+  const info=document.getElementById('rvInfo');
+  if(info)info.innerHTML='复盘对象：<b>'+escHtml(s.label||'')+'</b>'+
+    (s.created_at?' <span style="color:var(--muted)">'+escHtml(s.created_at)+'</span>':'')+
+    (s.src==='cloud'?' <span class="chip zhong" style="position:static;margin:0 4px">云端存档 · 回填需先转存本机</span>':'');
+  const box=document.getElementById('rvAi');
+  if(box){
+    const ai=s.ai||[];
+    box.innerHTML=ai.length?
+      ('<div style="font-size:12px;color:var(--muted);margin:8px 0 4px"><b>当时的 AI 解读</b>（存档快照，只读回看）</div>'+
+       ai.map(a=>'<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;background:#fff">'+
+         '<div style="font-size:12px;color:var(--muted);margin-bottom:4px">'+escHtml(a.model)+'</div>'+
+         '<div style="font-size:13px;white-space:pre-wrap">'+escHtml(a.text)+'</div></div>').join('')):
+      '<div style="font-size:12px;color:var(--muted);margin:8px 0 4px">当时未保存 AI 解读（存档时若尚未解读，此处为空）</div>';
+  }
+  rvMsg('');
+}
+function saveReview(){
+  if(!curSaveId){rvMsg('请先「存档」或「读档」一个盘面，再做事后回填',true);return;}
+  const s=findSave(curSaveId);
+  if(!s){rvMsg('关联的存档已不存在，请重新读档',true);detachReview();return;}
+  const fb=(document.getElementById('rvFeedback')||{}).value||'';
+  const vf=(document.getElementById('rvVerified')||{}).value||'';
+  if(s.src!=='local'){rvMsg('云端存档暂不支持回填——点「转存本机」后即可在本机回填',true);return;}
+  const saves=localSaves();
+  const it=saves.find(x=>x.id===curSaveId);
+  if(!it){rvMsg('关联的存档已不存在，请重新读档',true);detachReview();return;}
+  /* 空串即清除该可选字段（旧档读不到就是空，写入才创建字段） */
+  if(fb)it.feedback=fb.slice(0,4000);else delete it.feedback;
+  if(vf)it.verified=vf;else delete it.verified;
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(saves));}catch(e){rvMsg('本机存储失败（可能已满）：'+e.message,true);return;}
+  rvMsg('已保存到本机存档 · '+(vf==='yes'?'应验':vf==='no'?'未应验':'待验')+(fb?'（回填 '+fb.length+' 字）':''));
+  renderSaves();
+}
+/* 云端条目转存本机：参数 + 当时的解读快照一并带上，回填随后即可写本地副本 */
+function cloudToLocal(){
+  /* 只有云端条目（id 以 C 开头）才需要转存；本机条目或未关联时报错 */
+  if(!curSaveId||curSaveId[0]==='L'){rvMsg('仅云端存档需要转存',true);return;}
+  const s=findSave(curSaveId);
+  if(!s){rvMsg('存档不存在',true);return;}
+  const item={id:'L'+Date.now(),created_at:new Date().toLocaleString('zh-CN',{hour12:false}),
+    label:s.label||'',pillars:s.pillars||'',params:s.params||{},src:'local',fromCloud:curSaveId};
+  if(s.ai&&s.ai.length)item.ai=s.ai;
+  const saves=localSaves();saves.unshift(item);
+  try{localStorage.setItem(SAVE_KEY,JSON.stringify(saves.slice(0,100)));}catch(e){rvMsg('本机存储失败：'+e.message,true);return;}
+  curSaveId=item.id;curSaveKey=histKey(item.params);
+  showReview(item);
+  rvMsg('已转存本机，可继续回填');
+  renderSaves();
+}
+
 function castTest(){
   const dun=parseInt(document.getElementById('tDun').value);
   const ju=parseInt(document.getElementById('tJu').value);
   const hourIdx=parseInt(document.getElementById('tGZ').value);
   const jg=parseInt(document.getElementById('iJi').value);
-  const R=QM.paipan(dun,ju,hourIdx,jg);
+  const pan=document.getElementById('iPan').value;
+  const tianqin=document.getElementById('iTq').value;
+  const R=QM.paipan(dun,ju,hourIdx,jg,{pan,tianqin});
   curR=R;
   render(R,{test:true,hourGZ:gz(hourIdx),jg});
 }
@@ -270,8 +524,20 @@ function renderYongshen(R){
 function render(R,m){
   const dayGan=m.test?null:m.dayGZ.charAt(0);
   const G=gejuUI(R,dayGan);
+  const isFei=R.pan==='fei';
   const dunBadge=`<span class="badge ${R.dun===1?'yang':'yin'}">${R.dun===1?'阳遁':'阴遁'}${R.ju}局</span>`;
-  const guestNote=`天禽随天芮寄 <b>${PAL[R.guest.pal].gua}${R.guest.pal}宫</b>（中宫干 <b>${R.guest.gan}</b> 并显）${R.guest.isZF?' · <b>天禽为值符</b>':''}`;
+  const guestNote=isFei
+    ? '飞盘派<b>中五宫入序</b>：有星、有神、<b>无门</b>，不做天禽寄宫'
+    : `天禽${R.tianqin==='yangen-yinkun'?'（阳遁寄艮八 · 阴遁寄坤二）':'随天芮'}寄 <b>${PAL[R.guest.pal].gua}${R.guest.pal}宫</b>（中宫干 <b>${R.guest.gan}</b> 并显）${R.guest.isZF?' · <b>天禽为值符</b>':''}`;
+  /* 定局行随流派变化：茅山不看符头；置闰给出超神/接气/正授/置闰与符头块 */
+  const dingjuRow=(()=>{
+    if(m.method==='maoshan')
+      return `<tr><th>定局法</th><td><b>茅山法</b>（交节日当天起算，每 5 日一元，不看符头）→ ${m.juTerm}${m.yuanName}＝${R.ju}局</td></tr>`;
+    if(m.method==='zhiran')
+      return `<tr><th>定局法</th><td><b>置闰法</b> · ${m.rule} · 上元符头 <b>${m.fuTou}</b> 日${m.fuTouBack>0?`（${m.fuTouBack} 日前）`:''} → <b>${m.yuanName}</b>；${m.juTerm}${m.yuanName}＝${R.ju}局</td></tr>`;
+    return `<tr><th>符头（拆补）</th><td>${m.fuTou} 日${m.fuTouBack>0?`（${m.fuTouBack} 日前）`:''} → <b>${m.yuanName}</b></td></tr>`;
+  })();
+  const paiRow=`<tr><th>排盘派别</th><td><b>${isFei?'飞盘派':'转盘派'}</b>${isFei?'（九星/八门/九神按洛书数序飞布，八门跳过中五）':''}${!isFei&&R.tianqin==='yangen-yinkun'?' · 天禽寄宫：阳遁艮八 / 阴遁坤二':''}</td></tr>`;
 
   let head='';
   if(m.test){
@@ -298,10 +564,11 @@ function render(R,m){
       <tr><th>下一节气</th><td>${m.nextTerm} · ${fmtJD(m.nextJD)}</td></tr>
       <tr><th>年干支</th><td><b>${R.nian.gan}${R.nian.zhi}</b> 年（干支年 ${m.gzYear||m.ly}，以立春为界）· 年马星 <b>${R.ma.year.zhi}</b>（${PAL[R.ma.year.pal].gua}${R.ma.year.pal}宫）</td></tr>
       <tr><th>旬空（空亡）</th><td>时${R.xunName}旬空 <b>${R.kong.hour.zhi.join('、')}</b> 落 ${[...new Set(R.kong.hour.pal)].map(p=>PAL[p].gua+p+'宫').join('、')}；日${gz(R.meta.dayIdx-(R.meta.dayIdx%10)).slice(0,2)}旬空 <b>${R.kong.day.zhi.join('、')}</b></td></tr>
-      <tr><th>符头（拆补）</th><td>${m.fuTou} 日${m.fuTouBack>0?`（${m.fuTouBack} 日前）`:''} → <b>${m.yuanName}</b></td></tr>
-      <tr><th>定局</th><td>${dunBadge} &nbsp; ${m.term}${m.yuanName}＝${R.ju}局</td></tr>
+      ${dingjuRow}
+      <tr><th>定局</th><td>${dunBadge} &nbsp; ${m.juTerm||m.term}${m.yuanName}＝${R.ju}局</td></tr>
       <tr><th>值符 / 值使</th><td>${R.zfStar} 落 ${PAL[R.zfTo].gua}${R.zfTo}宫 &nbsp;/&nbsp; ${R.zsDoor} 落 ${PAL[R.zsLuo].gua}${R.zsLuo}宫</td></tr>
       <tr><th>中宫寄宫</th><td>${guestNote}</td></tr>
+      ${paiRow}
     </table></div></div></div>`;
   }
 
@@ -315,8 +582,9 @@ function render(R,m){
     const isMid=p===5;
     const isGuest=!isMid&&R.guest&&p===R.guest.pal;
     const showJi=isGuest&&R.guest.gan!==R.tian[p];
-    const sky=isMid?R.di[5]:R.tian[p];
-    const starTxt=isMid?'天禽':(R.tianStar[p]+(isGuest?'<span style="color:#854F0B">·禽</span>':''));
+    /* 中五：转盘显示地盘干（天盘干即地盘干）；飞盘中五入序，显示该宫天盘干 */
+    const sky=isMid?(isFei?R.tian[5]:R.di[5]):R.tian[p];
+    const starTxt=isMid?(isFei?R.tianStar[5]:'天禽'):(R.tianStar[p]+(isGuest?'<span style="color:#854F0B">·禽</span>':''));
     const isKong=kongPal.has(p)||dayKongPal.has(p);
     const tags=[];
     if(p===R.zfTo)tags.push('<span class="tag zf">值符</span>');
@@ -330,15 +598,15 @@ function render(R,m){
       <div class="god">${R.god[p]}</div>
       <div class="sd"><span class="star">${starTxt}</span><span class="door">${R.door[p]}</span></div>
       <div class="stems"><span class="sky${showJi?' two':''}">${sky}${showJi?`<span class="ji">${R.guest.gan}</span>`:''}</span><span class="earth">${R.di[p]}</span></div>
-      <div class="fx">${isMid?`中干${R.di[5]} → 寄${PAL[R.guest.pal].gua}${R.guest.pal}宫`:''}</div>
+      <div class="fx">${isMid?(isFei?'飞盘：中五入序（有星有神无门）':`中干${R.di[5]} → 寄${PAL[R.guest.pal].gua}${R.guest.pal}宫`):''}</div>
     </div>`;
   }
 
   const html=head+`
   <div class="card">
-    <h2>三、九宫盘</h2>
+    <h2>三、九宫盘 <span style="font-size:11px;color:#6f6e68;font-weight:400">（${isFei?'飞盘派':'转盘派'} · ${m.method==='maoshan'?'茅山法':m.method==='zhiran'?'置闰法':'拆补法'}）</span></h2>
     <div class="grid">${cells}</div>
-    <div class="legend">每宫自上而下：八神 / 九星 · 八门 / <b>天盘干</b>（右上角小字为寄宫之中宫干）· 地盘干 &nbsp;—&nbsp; 南下北上，符合洛书方位<br>标记：<span class="tag zf" style="position:static">值符</span> <span class="tag zs" style="position:static">值使</span> <span class="tag kong" style="position:static">旬空</span>（时/日旬空所落之宫）<span class="tag ma" style="position:static">马</span>（日马星）<span class="tag day" style="position:static">日干</span>（日干六仪落宫）</div>
+    <div class="legend">每宫自上而下：${isFei?'九神':'八神'} / 九星 · 八门 / <b>天盘干</b>（右上角小字为寄宫之中宫干）· 地盘干 &nbsp;—&nbsp; 南下北上，符合洛书方位<br>标记：<span class="tag zf" style="position:static">值符</span> <span class="tag zs" style="position:static">值使</span> <span class="tag kong" style="position:static">旬空</span>（时/日旬空所落之宫）<span class="tag ma" style="position:static">马</span>（日马星）<span class="tag day" style="position:static">日干</span>（日干六仪落宫）</div>
   </div>
 
   <div class="card">
@@ -379,7 +647,7 @@ function render(R,m){
   <div class="card">
     <h2>七、逐宫明细</h2>
     <table>
-      <tr><th style="width:60px">宫位</th><th>八神</th><th>九星</th><th>八门</th><th>天盘</th><th>地盘</th><th>门宫关系</th></tr>
+      <tr><th style="width:60px">宫位</th><th>${isFei?'九神':'八神'}</th><th>九星</th><th>八门</th><th>天盘</th><th>地盘</th><th>门宫关系</th></tr>
       ${[1,2,3,4,5,6,7,8,9].map(p=>{
         const d=R.door[p];
         let rel='—';
@@ -390,7 +658,7 @@ function render(R,m){
           else rel='相生';
         }
         const isGuest=p!==5&&R.guest&&p===R.guest.pal&&R.guest.gan!==R.tian[p];
-        const starCell=p===5?'天禽':(R.tianStar[p]+(isGuest?' <span style="color:#854F0B">·禽寄</span>':''));
+        const starCell=p===5?(isFei?R.tianStar[5]:'天禽'):(R.tianStar[p]+(isGuest?' <span style="color:#854F0B">·禽寄</span>':''));
         return `<tr><td><b>${PAL[p].gua}${p}</b> ${PAL[p].dir}</td><td>${R.god[p]}</td><td>${starCell}</td>
         <td>${d}</td><td><b>${R.tian[p]||''}</b>${isGuest?` <span style="color:#854F0B">(+${R.guest.gan}寄)</span>`:''}</td>
         <td>${R.di[p]}</td><td>${rel}</td></tr>`;
@@ -406,7 +674,7 @@ function render(R,m){
       <tr><th>时干支序</th><td>${R.hourIdx}（${m.hourGZ}）</td></tr>
       <tr><th>地盘布干</th><td>${[1,2,3,4,5,6,7,8,9].map(p=>`${p}宫${R.di[p]}`).join(' ')}</td></tr>
       <tr><th>天盘旋转量</th><td>值符 ${PAL[R.zfPal].gua}${R.zfPal}宫${R.zfPal===5?'（禽随芮，自坤二起转）':''} → ${PAL[R.zfTo].gua}${R.zfTo}宫，顺时针移 <b>${R.shift}</b> 位</td></tr>
-      <tr><th>天禽寄宫</th><td>天芮所临 ${PAL[R.guest.pal].gua}${R.guest.pal}宫，中宫干 <b>${R.guest.gan}</b> 并显于该宫天盘</td></tr>
+      <tr><th>天禽寄宫</th><td>${isFei?'飞盘派中五宫入序，有星有神无门，不做天禽寄宫':('天芮所临 '+PAL[R.guest.pal].gua+R.guest.pal+'宫，中宫干 <b>'+R.guest.gan+'</b> 并显于该宫天盘')}</td></tr>
       <tr><th>值使飞行</th><td>自 ${PAL[R.zsPal].gua}${R.zsPal}宫 ${R.forward?'顺':'逆'}飞 ${R.n-1} 步 → ${PAL[R.zsLuo].gua}${R.zsLuo}宫</td></tr>
     </table>
   </div>
@@ -414,18 +682,20 @@ function render(R,m){
   <div class="card">
     <h2>九、算法依据与路线图</h2>
     <div class="note">
-      <b>已实现</b>：真太阳时（经度+均时差）· 太阳视黄经求节气（精度约1分钟）· 拆补法定局（符头三元）· 地盘顺仪逆奇飞布 ·
+      <b>已实现</b>：真太阳时（经度+均时差）· 太阳视黄经求节气（精度约1分钟）· 三种定局法 —— <b>拆补法</b>（符头三元）、<b>置闰法</b>（超神/接气/正授/置闰，符头块走查，锚点 1717-12-16 甲子，康熙五十七芒种置闰算例复现）、<b>茅山法</b>（交节日当天起算每 5 日一元，不看符头）· 两种排盘派别 —— <b>转盘派</b>（值符加时干转宫）与 <b>飞盘派</b>（九星/八门/九神按洛书数序飞布，八门跳过中五，中五宫有星有神无门、不寄宫）· 天禽寄宫两变体（随天芮 / 阳遁寄艮八·阴遁寄坤二）· 地盘顺仪逆奇飞布 ·
       值符加时干转盘 · 值使按时序洛书飞宫 · 八门随值使转宫 · 八神阳顺阴逆 · 天禽随芮、中宫干寄宫并显 · 旬空（空亡宫）· 日/年驿马 · 日干·时干落宫<br>
       <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
       <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示<br>
-      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 418 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **甲取旬按本柱旬（日干≠时干口径）** / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推** / **分页参数 NaN 守卫**）全部通过<br><br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 541 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **甲取旬按本柱旬（日干≠时干口径）** / **立春真实时刻为界的干支年** / 节气基准解耦 / **历法锚点 72 节气+8 日柱（对 lunar-javascript 全量交叉校验）** / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推** / **分页参数 NaN 守卫** / **P1-3 流派配置：飞盘算例四源一致逐宫比对、置闰康熙五十七算例、茅山 2027-12 算例**）全部通过，另加浏览器沙箱 128 项 + jsdom 复核 10 项 + P1-3 渲染冒烟 42 项 + P2-2 PWA/分享冒烟 23 项<br><br>
       <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
       两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
       非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·
       <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次；仍不通则<b>在 Gemini 家族内依次递推</b>（如 3.8 Flash → 3.6 Flash），全族试完才报错，<b>不会跨到别家模型</b>；重试与递推进度在该列实时显示 ·
       多模型列<b>等高并各自出滚动条</b>、输出时自动跟随底部 · 模型思考链（reasoning / <code>&lt;think&gt;</code>）一律不入正文、不进追问历史<br>
       <b>盘面存档</b>：本地存 localStorage、线上同步 D1（默认按<b>本网络</b>隔离，他人不可见）· 面板填<b>管理口令</b>并勾选「读全部」即可<b>跨网络 / 跨设备</b>列出全部云端存档并读档（服务端 <code>?all=1&amp;code=</code> 能力）· 读档时下拉值按选项白名单回退，不会因旧档值非法而把选择框置空<br>
-      <b>待实现（M1 余项）</b>：置闰法（超神接气，即《烟波钓叟歌》"超神接气为准的"）· 飞盘派排法 · 年命入局（年干支已备表单、未参与盘局）—— 置闰法涉及流派争议，待《兵法奇门》第二部「用局研究」落地
+      <b>P2-2 PWA 与分享</b>：manifest + Service Worker 离线缓存（<code>/api/</code> 永不缓存、只拦同源 GET）· 起局参数编成 <code>#p=</code> base64url 链接（UTF-8 安全），打开即还原并自动起局 · http(s) 才注册 SW，本地双击 <code>file://</code> 自动跳过<br>
+      <b>P2-3 案例复盘与翻局</b>：存档条目增加可选 <code>feedback</code>（事后回填）/ <code>verified</code>（应验/未应验/待验）字段，AI 列下方「七、案例复盘」直接写回本机存档（旧档无字段即空，透明兼容）· 存档同时快照<b>当时的 AI 解读</b>，读档时连同盘面一起只读回看 · 云端存档可「转存本机」后回填 · 「◀ 上一局 / 下一局 ▶」在最近 50 局间翻动，<b>连同流派配置（派别/定局法/寄宫）一起回放</b><br>
+      <b>待实现</b>：年命入局（年干支已备表单、未参与盘局）
     </div>
   </div>`;
   /* F1：innerHTML 整段重写会销毁 #yCat（回默认首项），先记下当前问事类别，写完回填 */
@@ -849,5 +1119,7 @@ function aiCopyPan(){
   aiLoadCfg();
   renderModelChips();
   aiSyncMode(); /* 内部已在 server 模式时 loadModels（F13），本地双击 file:// 不拉清单 */
-  setNow();
+  renderHistUI(); /* P2-3：翻局按钮初始禁用态 + 0/0 */
+  /* 带 #p= 分享链接进来的，保留链接里的时刻、用链接参数起局，不用「现在」覆盖 */
+  if(hashRestored)cast();else setNow();
 })();

@@ -31,10 +31,10 @@ function ganPal(R,g,xunIdx){
 }
 /* 门 → 宫 */
 function doorPal(R,d){for(let p=1;p<=9;p++){if(p!==5&&R.door[p]===d)return p;}return null;}
-/* 星 → 宫（天盘找，天禽随芮） */
-function starPal(R,s){for(let p=1;p<=9;p++){if(p!==5&&R.tianStar[p]===s)return p;}return null;}
-/* 神 → 宫 */
-function godPal(R,g){for(let p=1;p<=9;p++){if(p!==5&&R.god[p]===g)return p;}return null;}
+/* 星 → 宫（天盘找，天禽随芮；飞盘中五入序，故 p=5 也参与搜索） */
+function starPal(R,s){for(let p=1;p<=9;p++){if(p===5&&R.pan!=='fei')continue;if(R.tianStar[p]===s)return p;}return null;}
+/* 神 → 宫（飞盘九神含中五，故 p=5 也参与搜索） */
+function godPal(R,g){for(let p=1;p<=9;p++){if(p===5&&R.pan!=='fei')continue;if(R.god[p]===g)return p;}return null;}
 
 /* 四柱干（年/月/日/时） */
 function pillars(R){
@@ -279,7 +279,7 @@ function yingqi(R){
   const m=R.meta;if(!m)return null;
   let pal=R.luo&&R.luo.dayPal;
   if(!pal)return null;
-  if(pal===5)pal=(R.guest&&R.guest.pal)||2;          /* 中宫按寄宫取地支 */
+  if(pal===5&&R.pan!=='fei')pal=(R.guest&&R.guest.pal)||2;  /* 中宫按寄宫取地支（飞盘中五即中五，不寄） */
   const palZhi=Object.keys(QM.ZHI_PAL).filter(z=>QM.ZHI_PAL[z]===pal);
   const dayGZ=m.dayGZ||QM.gz(m.dayIdx||0);
   const dayStem=dayGZ[0],dayZhi=dayGZ[1];
