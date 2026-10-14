@@ -6,12 +6,8 @@
    ============================================================ */
 import * as L from './_lib.js';
 
-const BUILTIN = [
-  { id: 'gemini-3.6-flash', pv: 'Google' },
-  { id: 'gemini-3.8-flash', pv: 'Google' },
-  { id: 'deepseek-flash', pv: 'DeepSeek' },
-  { id: 'deepseek-v4-pro', pv: 'DeepSeek' }
-];
+/* 内置清单与同族回落链（_lib.familyModels）共用一份，避免两处漂移 */
+const BUILTIN = L.BUILTIN_MODELS;
 
 async function handle(request, env) {
   if (request.method === 'OPTIONS') return L.options();

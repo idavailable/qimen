@@ -966,26 +966,31 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('30.3 三次请求都是 Gemini 模型', up.calls.every(c => c.model === GEM), true);
   ck('30.4 最终正文完整回传', a30.full, '丙');
 
-  /* 30.5 Gemini 三连 503 → 回落 DeepSeek */
+  /* 30.5 Gemini 三连 503 → 同族递推到另一个 Gemini 模型（不跨到 DeepSeek） */
   up = scripted([{ status: 503 }, { status: 503 }, { status: 503 }, { text: '丁' }]);
   globalThis.fetch = up;
   let db6 = fakeD1();
   r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), { GEMINI_API_KEY: 'gk', DEEPSEEK_API_KEY: 'dk', QM_DB: db6, QM_RETRY_WAIT_MS: '0' });
   a30 = await readAll(r30);
-  ck('30.5 三次重试耗尽后回落（共 4 次请求）', up.calls.length, 4);
-  ck('30.6 回落请求换成 DeepSeek 本家模型名', up.calls[3].model, 'deepseek-flash');
-  ck('30.7 回落事件通知前端', (a30.raw.match(/"fallback"/g) || []).length, 1);
-  ck('30.8 回落列文案含目标供应商', a30.raw.indexOf('DeepSeek') >= 0, true);
-  ck('30.9 回落成功仍有完整正文', a30.full, '丁');
-  ck('30.10 D1 留痕记实际作答模型', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[6]), 'deepseek-flash');
+  ck('30.5 三次重试耗尽后同族递推（共 4 次请求）', up.calls.length, 4);
+  ck('30.6 递推换成同族另一个 Gemini 模型', up.calls[3].model, 'gemini-3.6-flash');
+  ck('30.7 递推事件通知前端', (a30.raw.match(/"fallback"/g) || []).length, 1);
+  ck('30.8 递推列文案含目标模型展示名', a30.raw.indexOf('Gemini 3.6 Flash') >= 0, true);
+  ck('30.9 递推成功仍有完整正文', a30.full, '丁');
+  ck('30.10 D1 留痕记实际作答模型', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[6]), 'gemini-3.6-flash');
+  /* 关键：全程只打 Gemini 通道，一次都不碰 DeepSeek（家族内递推，不跨家） */
+  ck('30.10b 递推不跨家族（4 次请求全走 Gemini 通道）', up.calls.every(c => c.url.indexOf('generativelanguage') >= 0), true);
+  ck('30.10c 递推不借用别家密钥（无 deepseek-* 模型名）', up.calls.every(c => !/^deepseek/i.test(c.model)), true);
 
-  /* 30.11 无可用回落模型 → 明确报错，不抛异常 */
-  up = scripted([{ status: 503 }, { status: 503 }, { status: 503 }]);
+  /* 30.11 同族也全部失败 → 明确报错，不抛异常、不跨家兜底 */
+  up = scripted([{ status: 503 }, { status: 503 }, { status: 503 }, { status: 503 }]);
   globalThis.fetch = up;
-  r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), { GEMINI_API_KEY: 'gk', QM_DB: fakeD1(), QM_RETRY_WAIT_MS: '0' });
+  r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), { GEMINI_API_KEY: 'gk', DEEPSEEK_API_KEY: 'dk', QM_DB: fakeD1(), QM_RETRY_WAIT_MS: '0' });
   a30 = await readAll(r30);
-  ck('30.11 无回落模型 → error 事件（HTTP 仍 200 流）', r30.status === 200 && up.calls.length === 3 && a30.raw.indexOf('"error"') >= 0, true);
-  ck('30.12 报错文案点明重试次数', a30.raw.indexOf('重试 2 次仍不可用') >= 0, true);
+  ck('30.11 同族递推耗尽 → error 事件（HTTP 仍 200 流）', r30.status === 200 && up.calls.length === 4 && a30.raw.indexOf('"error"') >= 0, true);
+  ck('30.12 报错文案点明重试次数与递推规模', a30.raw.indexOf('重试 2 次') >= 0 && a30.raw.indexOf('同族 1 个模型依次递推') >= 0, true);
+  ck('30.12b 报错文案说明不跨用别家模型', a30.raw.indexOf('不跨用别家模型') >= 0, true);
+  ck('30.12c 全族失败也不改投 DeepSeek（仍 4 次请求）', up.calls.every(c => c.url.indexOf('generativelanguage') >= 0), true);
 
   /* 30.13 连接失败（fetch 抛错）也算可重试 */
   up = scripted([{ throwNet: true }, { text: '戊' }]);
@@ -1024,21 +1029,29 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   ck('30.21 非流式兜底同样剥思考链', a30.full, 'XY');
   ck('30.22 非流式兜底 D1 同样不含思考链', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[5]), 'XY');
 
-  /* 30.23 回落供应商选择：不与当前同源 */
-  ck('30.23 回落不选自己（deepseek 失败时不回落 deepseek）', L.fallbackProvider({ DEEPSEEK_API_KEY: 'd' }, { from: 'deepseek' }) === null, true);
-  ck('30.24 无任何备选密钥时回落为 null', L.fallbackProvider({}, { from: 'gemini' }) === null, true);
-  ck('30.25 有 DeepSeek 时优先回落 DeepSeek', String((L.fallbackProvider({ DEEPSEEK_API_KEY: 'd', QM_API_KEY: 'q' }, { from: 'gemini' }) || {}).from), 'deepseek');
+  /* 30.23–30.28 同族递推：只在同一供应商的其它模型间依次递推，绝不跨家 */
+  const fbG = L.fallbackProvider({ DEEPSEEK_API_KEY: 'd', QM_API_KEY: 'q' }, { from: 'gemini', base: 'B', key: 'K', model: 'gemini-3.8-flash' });
+  ck('30.23 递推选同族下一个模型且不选自己', fbG && fbG.model, 'gemini-3.6-flash');
+  ck('30.24 递推沿用本家通道（base/key 不变）', fbG && fbG.base === 'B' && fbG.key === 'K' && fbG.from === 'gemini', true);
+  ck('30.25 有 DeepSeek 密钥也不跨家', fbG && fbG.from, 'gemini');
+  ck('30.26 已试过的模型不再重复投', L.fallbackProvider({}, { from: 'gemini', model: 'gemini-3.8-flash' }, ['gemini-3.6-flash']) === null, true);
+  ck('30.27 同族耗尽 → null（不借别家）', L.fallbackProvider({ DEEPSEEK_API_KEY: 'd' }, { from: 'gemini', model: 'gemini-3.8-flash' }, ['gemini-3.6-flash']) === null, true);
+  ck('30.28 BYOK 无同族清单 → null（不编造模型名）', L.fallbackProvider({}, { from: 'byok', model: 'gpt-4o' }) === null, true);
+  ck('30.28b QM_GEMINI_MODELS 可覆盖递推顺序', L.familyModels({ QM_GEMINI_MODELS: 'gemini-x,gemini-y' }, 'gemini').join(','), 'gemini-x,gemini-y');
+  ck('30.28c 环境默认模型排在递推链最前', L.familyModels({ GEMINI_MODEL: 'gemini-pro' }, 'gemini')[0], 'gemini-pro');
+  ck('30.28d 模型展示名（状态栏可读）', L.modelLabel('gemini-3.8-flash') + '/' + L.modelLabel('deepseek-v4-pro'), 'Gemini 3.8 Flash/DeepSeek V4 Pro');
 
-  /* 30.26 前端：对比列等高 + 内部滚动（CSS 断言） */
+  /* 30.29–30.33 前端：对比列等高 + 内部滚动 + 提示词 */
   {
     const fsx = require('fs');
     const html = fsx.readFileSync('./public/index.html', 'utf8');
     const m = html.match(/\.ai-col-body\{[^}]*\}/);
-    ck('30.26 对比列固定高度（两边始终等高）', !!m && /height:\s*440px/.test(m[0]), true);
-    ck('30.27 对比列超出即出滚动条', !!m && /overflow-y:\s*auto/.test(m[0]), true);
-    ck('30.28 小屏同样等高可滚', /\.ai-col-body\{height:min\(440px/.test(html), true);
-    ck('30.29 前端与服务端提示词仍逐字一致', SRV_PROMPT === PUB_PROMPT, true);
-    ck('30.30 提示词禁止输出思考过程', SRV_PROMPT.indexOf('不得输出思考过程') >= 0, true);
+    ck('30.29 对比列固定高度（两边始终等高）', !!m && /height:\s*440px/.test(m[0]), true);
+    ck('30.30 对比列超出即出滚动条', !!m && /overflow-y:\s*auto/.test(m[0]), true);
+    ck('30.31 小屏同样等高可滚', /\.ai-col-body\{height:min\(440px/.test(html), true);
+    ck('30.32 前端与服务端提示词仍逐字一致', SRV_PROMPT === PUB_PROMPT, true);
+    ck('30.33 提示词禁止输出思考过程', SRV_PROMPT.indexOf('不得输出思考过程') >= 0, true);
+    ck('30.34 递推标记措辞为「递推…作答」', html.indexOf('→ 递推 ') >= 0, true);
   }
 
   globalThis.fetch = origFetch;

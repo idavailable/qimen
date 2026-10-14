@@ -147,6 +147,46 @@ function customProviderWarnings(env) {
   return w;
 }
 function norm(base) { return String(base || '').replace(/\/+$/, ''); }
+
+/* ---------- 内置模型清单（models.js 与同族回落链共用同一份，避免两处漂移） ---------- */
+const BUILTIN_MODELS = [
+  { id: 'gemini-3.6-flash', pv: 'Google' },
+  { id: 'gemini-3.8-flash', pv: 'Google' },
+  { id: 'deepseek-flash', pv: 'DeepSeek' },
+  { id: 'deepseek-v4-pro', pv: 'DeepSeek' }
+];
+
+/* 模型 id → 展示名：gemini-3.6-flash → Gemini 3.6 Flash；deepseek-v4-pro → DeepSeek V4 Pro */
+function modelLabel(id) {
+  const s = String(id || '');
+  const fam = /^deepseek/i.test(s) ? 'DeepSeek' : (/^gemini/i.test(s) ? 'Gemini' : '');
+  if (!fam) return s;
+  return fam + s.replace(/^[a-z]+/i, '').split('-').filter(Boolean)
+    .map(t => ' ' + t.charAt(0).toUpperCase() + t.slice(1)).join('');
+}
+
+/* 同一供应商（家族）下的模型序列 —— 「依次递推」的候选池。
+   gemini / deepseek 取内置清单（可用 QM_GEMINI_MODELS / QM_DEEPSEEK_MODELS 逗号分隔覆盖，
+   书写顺序即递推顺序），自定义 provider 取其 models；环境指定的默认模型一律提到最前。
+   BYOK 无法枚举同族模型 → 空表：宁可报错，也不凭空编模型名（必然上游 400）。 */
+function familyModels(env, from) {
+  env = env || {};
+  const fam = String(from || '');
+  const overrideKey = fam === 'gemini' ? 'QM_GEMINI_MODELS' : (fam === 'deepseek' ? 'QM_DEEPSEEK_MODELS' : '');
+  let list = [];
+  if (overrideKey && env[overrideKey]) {
+    list = String(env[overrideKey]).split(',').map(s => s.trim()).filter(Boolean);
+  } else if (fam === 'gemini' || fam === 'deepseek') {
+    list = BUILTIN_MODELS.filter(m => m.id.indexOf(fam) === 0).map(m => m.id);
+  } else {
+    const p = customProviders(env).filter(x => x.id === fam)[0];
+    if (p) list = p.models.map(String);
+  }
+  const def = fam === 'gemini' ? env.GEMINI_MODEL : (fam === 'deepseek' ? env.DEEPSEEK_MODEL : '');
+  if (def) list.unshift(String(def));
+  const seen = new Set();
+  return list.filter(m => { if (seen.has(m)) return false; seen.add(m); return true; });
+}
 /* F11：BYOK base 校验——仅公网 http(s)，禁回环/内网/保留地址，堵住借服务端 fetch 探测内网的 SSRF 面 */
 function byokBaseOk(base) {
   try {
@@ -221,33 +261,21 @@ function resolveProvider(env, body) {
   return null;
 }
 
-/* ---------- 回落供应商（六轮：Gemini 通道高峰期持续 503 时改投别家） ----------
-   次序：DeepSeek → 自定义 provider → 通用 QM_*；且不与当前供应商同源（免得回落回自己）。
-   回落必须换本家的模型名（同 F3 口径），否则把 gemini-* 发给 deepseek 必然上游 400。 */
-function fallbackProvider(env, current) {
+/* ---------- 同族回落（七轮：不再跨到别家，只在**同一供应商的其它模型**间依次递推） ----------
+   六轮原实现是「Gemini 挂了就改投 DeepSeek 作答」——换家族等于换解读风格，与用户所选不一致；
+   七轮改为家族内递推：当前模型重试耗尽 → 同族下一个模型 → 再下一个……全部试过仍不通才报错。
+   · tried：已尝试过的模型名（调用方传入，含当前模型），避免对同一模型反复投递；
+   · 递推沿用本家 base/key，只换模型名（跨家族换名才会必然上游 400，见 F3）；
+   · BYOK 无同族清单 → null（不编造模型名）。 */
+function fallbackProvider(env, current, tried) {
   env = env || {};
-  const from = (current && current.from) || '';
-  if (from !== 'deepseek' && env.DEEPSEEK_API_KEY) {
-    return {
-      base: norm(env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'),
-      model: env.DEEPSEEK_MODEL || 'deepseek-flash',
-      key: env.DEEPSEEK_API_KEY, from: 'deepseek', label: 'DeepSeek'
-    };
-  }
-  for (const p of customProviders(env)) {
-    const k = customKeyEnv(p.id);
-    if (p.id !== from && env[k]) {
-      return { base: norm(p.base), model: p.models[0], key: env[k], from: p.id, label: p.label || p.id };
-    }
-  }
-  if (from !== 'server' && env.QM_API_KEY) {
-    return {
-      base: norm(env.QM_BASE_URL || 'https://api.deepseek.com/v1'),
-      model: env.QM_MODEL || 'deepseek-chat',
-      key: env.QM_API_KEY, from: 'server', label: '通用兜底'
-    };
-  }
-  return null;
+  const cur = current || {};
+  const fam = String(cur.from || '');
+  const done = new Set((tried || []).map(String));
+  if (cur.model) done.add(String(cur.model));
+  const next = familyModels(env, fam).filter(m => !done.has(m))[0];
+  if (!next) return null;
+  return { base: cur.base, model: next, key: cur.key, from: fam, label: modelLabel(next) };
 }
 async function saveReading(env, row) {
   try {
@@ -291,4 +319,7 @@ export { customKeyEnv };
 export { customProviderWarnings };
 export { resolveProvider };
 export { fallbackProvider };
+export { familyModels };
+export { modelLabel };
+export { BUILTIN_MODELS };
 export { byokBaseOk };

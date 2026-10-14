@@ -31,10 +31,12 @@ function connectUpstream(prov, model, messages) {
   }).catch(() => null);
 }
 
-/* ---------- 六轮：Gemini 单独策略 ----------
+/* ---------- 七轮：Gemini 单独策略（家族内依次递推） ----------
    高峰期 Gemini 通道易 503（网关过载），单独给一套策略：
-     首次失败 → 等 10 秒重试，共 2 次；2 次之后仍不通 → 回落到别的已配供应商模型作答。
-   回落与重试过程用 SSE status / fallback 事件实时回报，前端逐列可见，不让用户干等。
+     ① 当前模型：失败即等 10 秒重试，共 2 次（可重试状态：5xx / 429 / 连接失败）；
+     ② 仍不通 → 改用**同一家族（Gemini）的其他模型**，依次递推逐个试一次；
+     ③ 全族试完仍不通 → 明确报错，**不跨到别家模型**（DeepSeek 等解读风格与本家不一致）。
+   全过程用 SSE status / fallback 事件实时回报，前端逐列可见，不让用户干等。
    其它供应商维持「一次即返」的原速失败语义，不引入额外延迟。
    重试间隔可用 QM_RETRY_WAIT_MS 覆盖（默认 10000，测试置 0）。 */
 const RETRY_TIMES = 2;
@@ -53,7 +55,17 @@ function retryWaitMs(env) {
   return Number.isFinite(n) && n >= 0 ? n : RETRY_WAIT_MS;
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function provLabel(prov) { return (prov && (prov.label || prov.model || prov.from)) || '上游'; }
+/* 展示名一律走 _lib.modelLabel：gemini-3.8-flash → Gemini 3.8 Flash（状态栏/列头更易读） */
+function provLabel(prov) {
+  if (!prov) return '上游';
+  return prov.label || L.modelLabel(prov.model) || prov.from || '上游';
+}
+function familyLabel(prov) {
+  const f = String((prov && prov.from) || '');
+  if (f === 'gemini') return 'Gemini';
+  if (f === 'deepseek') return 'DeepSeek';
+  return (prov && (prov.label || prov.from)) || '上游';
+}
 function failText(resp) { return resp ? ('HTTP ' + resp.status) : '连接失败'; }
 
 /* 剥完 HTML 标签的上游错误详情（五轮修：不把整页 markup 透传给前端） */
@@ -113,9 +125,12 @@ async function handle(request, env, ctx) {
 
   const stream = new ReadableStream({
     async pull(ctrl) {
-      /* ① 建连阶段：首次即可重试失败 → 重试 2 次（间隔 10s）→ 仍不通回落别家 */
+      /* ① 建连阶段：首次即可重试失败 →
+             当前模型重试 2 次（间隔 10 秒）→ 同族（Gemini）其他模型依次递推逐个试一次 */
       if (!(up && up.ok)) {
         const notice = s => { try { ctrl.enqueue(L.sseEvent(s)); } catch (e) { } };
+        const tried = [prov.model];   /* 已投过的模型：当前模型打头 */
+        const fam = familyLabel(prov);
         for (let i = 1; i <= RETRY_TIMES; i++) {
           notice({ status: provLabel(prov) + ' 通道繁忙（' + failText(up) + '），' + Math.round(retryWaitMs(env) / 1000) + ' 秒后重试（' + i + '/' + RETRY_TIMES + '）' });
           await sleep(retryWaitMs(env));
@@ -123,17 +138,19 @@ async function handle(request, env, ctx) {
           if (up && up.ok) break;
           if (!retriable(up)) break; /* 变成硬错误（如 401）就不再耗时间 */
         }
-        if (!(up && up.ok)) {
-          const fb = L.fallbackProvider(env, prov);
-          if (fb) {
-            notice({ status: provLabel(prov) + ' 连续不可用，回落到 ' + provLabel(fb) + ' 作答…' });
-            const r2 = await connectUpstream(fb, fb.model, messages);
-            if (r2 && r2.ok) { up = r2; usedProv = fb; notice({ fallback: provLabel(fb) }); }
-            else if (r2) up = r2;
-          }
+        /* 同族递推：换模型即换实例，逐个立即试一次，不再各等 10 秒（否则干等翻倍） */
+        while (!(up && up.ok) && retriable(up)) {
+          const fb = L.fallbackProvider(env, prov, tried);
+          if (!fb) break;
+          tried.push(fb.model);
+          notice({ status: provLabel(prov) + ' 仍不可用，改用同族 ' + L.modelLabel(fb.model) + ' 作答…' });
+          up = await connectUpstream(fb, fb.model, messages);
+          if (up && up.ok) { usedProv = fb; notice({ fallback: fb.label }); break; }
         }
         if (!(up && up.ok)) {
-          notice({ error: '上游 ' + failText(up) + '：' + provLabel(prov) + ' 重试 ' + RETRY_TIMES + ' 次仍不可用' + (L.fallbackProvider(env, prov) ? '，回落模型也未成功' : '（无可用回落模型）') });
+          const nSib = tried.length - 1;
+          notice({ error: '上游 ' + failText(up) + '：' + provLabel(prov) + ' 重试 ' + RETRY_TIMES + ' 次' +
+            (nSib ? '、同族 ' + nSib + ' 个模型依次递推' : '') + '后仍不可用（本策略只在 ' + fam + ' 家族内递推，不跨用别家模型）' });
           try { ctrl.enqueue(L.SSE_DONE); } catch (e) { }
           ctrl.close();
           return;

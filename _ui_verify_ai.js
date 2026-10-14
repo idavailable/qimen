@@ -280,7 +280,7 @@ ck('K4 reasoning 别名同样剔除',QMI.stripThinking('<reasoning>x</reasoning>
      'ev='+JSON.stringify(ev)+' full='+JSON.stringify(st.full));
 }
 
-/* K6–K9 端到端：status 占位 → 回落标记 → 正文剔除思考 → 历史不含思考 */
+/* K6–K9 端到端：status 占位 → 同族递推标记 → 正文剔除思考 → 历史不含思考 */
 /* 沙箱 DOM 不重解析 innerHTML，aiRenderCols 不会重建 col-* 节点：断言前手动复位一次（真实浏览器由 innerHTML 重建） */
 const resetColK=()=>{const h=aiColHead('gemini-3.8-flash'),b=aiColBody('gemini-3.8-flash');
   if(h)h.innerHTML='';if(b){b.innerHTML='';b.textContent='';}};
@@ -294,7 +294,7 @@ let snapAfterStatus='',snapAfterFallback='';
 fetch=mkStreamFetch([
   sseC2({status:'Gemini 3.8 Flash 通道繁忙（HTTP 503），10 秒后重试（1/2）'}),
   sseC2({status:'Gemini 3.8 Flash 通道繁忙（HTTP 503），10 秒后重试（2/2）'}),
-  sseC2({fallback:'DeepSeek'}),
+  sseC2({fallback:'Gemini 3.6 Flash'}),
   sseC2({choices:[{delta:{content:'一、盘面要点'}}]}),
   sseC2({choices:[{delta:{content:'<thinking>内心戏不入正文</thinking>：值符落宫。'}}]}),
   enc2.encode('data: [DONE]\n\n')
@@ -306,8 +306,8 @@ await aiRun();
 const kCol=aiColBody('gemini-3.8-flash');
 const kHead=aiColHead('gemini-3.8-flash');
 ck('K6 status 事件在列内先占位（loading）',snapAfterStatus.indexOf('重试（1/2）')>=0,'实际='+snapAfterStatus);
-ck('K7 fallback 事件在列头挂持久标记',kHead.innerHTML.indexOf('由 DeepSeek 回落作答')>=0,'实际='+kHead.innerHTML);
-ck('K8 回落提示在出正文前可见',snapAfterFallback.indexOf('回落作答')>=0,'实际='+snapAfterFallback);
+ck('K7 fallback 事件在列头挂持久标记',kHead.innerHTML.indexOf('递推 Gemini 3.6 Flash 作答')>=0,'实际='+kHead.innerHTML);
+ck('K8 递推提示在出正文前可见',snapAfterFallback.indexOf('改用同族 Gemini 3.6 Flash 作答')>=0,'实际='+snapAfterFallback);
 ck('K9 思考链既不入正文也不入历史',kCol.textContent==='一、盘面要点：值符落宫。'&&
    aiStates['gemini-3.8-flash'].history[1].content==='一、盘面要点：值符落宫。',
    '列='+JSON.stringify(kCol.textContent)+' 历史='+JSON.stringify(aiStates['gemini-3.8-flash'].history[1].content));
@@ -319,7 +319,7 @@ resetColK();
 fetch=mkStreamFetch([
   sseC2({status:'Gemini 通道繁忙（HTTP 503），10 秒后重试（1/2）'}),
   sseC2({choices:[{delta:{content:'半截'}}]}),
-  sseC2({error:'上游 HTTP 503：Gemini 重试 2 次仍不可用，回落模型也未成功'}),
+  sseC2({error:'上游 HTTP 503：Gemini 3.8 Flash 重试 2 次、同族 1 个模型依次递推后仍不可用（本策略只在 Gemini 家族内递推，不跨用别家模型）'}),
   enc2.encode('data: [DONE]\n\n')
 ]);
 await aiRun();

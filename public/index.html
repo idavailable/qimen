@@ -85,7 +85,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
 <body>
 
 <h1>奇门遁甲决策工具</h1>
-<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 383 项全过 + 浏览器沙箱全流程 105 项全过</div>
+<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 394 项全过 + 浏览器沙箱全流程 105 项全过</div>
 
 <div class="card">
   <h2>一、输入</h2>
@@ -547,11 +547,11 @@ function render(R,m){
       值符加时干转盘 · 值使按时序洛书飞宫 · 八门随值使转宫 · 八神阳顺阴逆 · 天禽随芮、中宫干寄宫并显 · 旬空（空亡宫）· 日/年驿马 · 日干·时干落宫<br>
       <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
       <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示<br>
-      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 383 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端 / **Gemini 重试与回落**）全部通过<br><br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 394 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推**）全部通过<br><br>
       <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
       两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
       非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·
-      <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次，仍不通自动回落到其它已配模型作答，重试与回落进度在该列实时显示 ·
+      <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次；仍不通则<b>在 Gemini 家族内依次递推</b>（如 3.8 Flash → 3.6 Flash），全族试完才报错，<b>不会跨到别家模型</b>；重试与递推进度在该列实时显示 ·
       多模型列<b>等高并各自出滚动条</b>、输出时自动跟随底部 · 模型思考链（reasoning / <code>&lt;think&gt;</code>）一律不入正文、不进追问历史<br>
       <b>待实现（M1 余项）</b>：置闰法（超神接气，即《烟波钓叟歌》"超神接气为准的"）· 飞盘派排法 · 年命入局（年干支已备表单、未参与盘局）—— 置闰法涉及流派争议，待《兵法奇门》第二部「用局研究」落地
     </div>
@@ -732,9 +732,9 @@ function aiPillars(){
   }catch(e){return '';}
 }
 /* 服务端代理模式：POST /api/interpret，SSE 增量回传，用 QMI.parseSSEChunk 解析
-   第六轮：服务端会插播 status（Gemini 重试/回落进度）、fallback、warn（截断）、error；
+   第六轮：服务端会插播 status（Gemini 重试/同族递推进度）、fallback、warn（截断）、error；
    正文一律先经 QMI.stripThinking 剥掉思考链——思考内容不进正文，也不进追问历史。
-   onEvent(kind,text) 用于把「等待/重试/回落」这类过程信息渲染到该列。 */
+   onEvent(kind,text) 用于把「等待/重试/递推」这类过程信息渲染到该列。 */
 async function aiServerStream(pan,model,history,onDelta,onEvent){
   /* F7：服务端代理模式下 byok 输入行已隐藏，残留的手填 base/model/key 不得覆盖芯片选择。
      中转站请由后台 CUSTOM_PROVIDERS 配置（自动出现在芯片上），前端不再随请求带上。 */
@@ -774,7 +774,7 @@ async function aiServerStream(pan,model,history,onDelta,onEvent){
     if(nv.length>vis.length){if(onDelta)onDelta(nv.slice(vis.length));vis=nv;}
   }
   if(cut){try{await reader.cancel();}catch(e){}}
-  /* 服务端明确报错（如 Gemini 重试耗尽且回落也失败）：整列按失败处理，不留半截正文 */
+  /* 服务端明确报错（如 Gemini 重试与同族递推都用尽）：整列按失败处理，不留半截正文 */
   if(errEvt)throw new Error(errEvt);
   vis=QMI.stripThinking(raw);
   if(onDelta&&(warnEvt||cut))onDelta('\n\n〔回复过长已截断'+(cut?('（'+cut+'）'):'')+'，可追问「继续」〕');
@@ -821,12 +821,13 @@ async function aiRun(){
         const prev=(aiStates[m]&&aiStates[m].history)?aiStates[m].history:[];
         try{
           const reply=await aiServerStream(pan,m,prev,d=>appendCol(m,d),(kind,text)=>{
-            /* status：Gemini 通道繁忙→10 秒后重试（1/2）→ 回落 XX 作答…，逐列实时可见 */
+            /* status：Gemini 通道繁忙→10 秒后重试（1/2）→ 改用同族 XX 作答…，逐列实时可见 */
             if(kind==='status')setNote(m,text);
             else if(kind==='fallback'){
+              /* 只在同族模型间递推（Gemini A → Gemini B → …），列头挂持久标记标明实际作答模型 */
               const head=aiColHead(m);
-              if(head)head.innerHTML+='<span class="fb-tag">→ 由 '+esc(text)+' 回落作答</span>';
-              if(phase[m]!=='stream')setNote(m,'由 '+text+' 回落作答…');
+              if(head)head.innerHTML+='<span class="fb-tag">→ 递推 '+esc(text)+' 作答</span>';
+              if(phase[m]!=='stream')setNote(m,'改用同族 '+text+' 作答…');
             }
           });
           aiStates[m]={history:prev.concat([{role:'user',content:pan},{role:'assistant',content:reply}])};
