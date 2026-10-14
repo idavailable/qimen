@@ -13,13 +13,18 @@ const GAN=['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'];
 const SHENG={'金':'水','水':'木','木':'火','火':'土','土':'金'};
 function sheng(a,b){return SHENG[a]===b;}
 
-/* 天干 → 地盘宫（甲遁六仪后找） */
-function ganPal(R,g){
+/* 天干 → 地盘宫（甲遁六仪后找）
+ * xunIdx：该干所在柱的六十甲子序（日干传日柱序、时干传时柱序、年干传年柱序、月干传月柱序）。
+ * 甲按【本柱旬】遁六仪——与 engine.js R.luo.dayDun（日柱旬）/ hourDun（时柱旬）口径一致；
+ * 若一律用时柱旬，甲日用神表「求测人落Z宫」会与盘面文字「日干甲（遁X）落Y宫」给出两个答案。
+ * 缺省 xunIdx 时退化为时柱序（paipan 直出模式只有时柱）。 */
+function ganPal(R,g,xunIdx){
   let s=g;
   if(s==='甲'){
-    const idx=R.meta?R.meta.hourIdx:R.hourIdx;
-    if(idx===undefined||idx===null)return 5; // paipan 直出守卫
-    s=QM.XUN_YI[Math.floor(idx/10)];
+    let xi=xunIdx;
+    if(typeof xi!=='number')xi=(R.meta?R.meta.hourIdx:R.hourIdx);
+    if(xi===undefined||xi===null)return 5; // paipan 直出守卫
+    s=QM.XUN_YI[QM.gz(xi-(xi%10))];
   }
   for(let p=1;p<=9;p++){if(R.di[p]===s)return p;}
   return 5;
@@ -56,9 +61,18 @@ function pillars(R){
   const mStem=GAN[((yNum%5)*2+2+(mNum-1))%10];
   /* 完整干支（存档标签等展示用；只加字段，不改动原有四干字段） */
   const ZHI12=['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'];
+  /* 各柱六十甲子序：日干/时干/年干/月干为甲时按本柱旬遁六仪用 */
+  const dayIdx=(typeof m.dayIdx==='number')?m.dayIdx:null;
+  const hourIdx=(typeof m.hourIdx==='number')?m.hourIdx:
+    ((typeof R.hourIdx==='number')?R.hourIdx:null);
+  // 月柱序：五虎遁月干与节气月支求中国剩余定理解（i%10=月干, i%12=月支）
+  const mStemIdx=((yNum%5)*2+2+(mNum-1))%10;
+  let monthIdx=null;
+  for(let i=0;i<60;i++){if(i%10===mStemIdx&&i%12===(mNum+1)%12){monthIdx=i;break;}}
   return{year:yearStem,month:mStem,day:dayStem,hour:hourStem,
          yearGZ:QM.gz(yIdx),monthGZ:mStem+ZHI12[(mNum+1)%12],
-         dayGZ:m.dayGZ||'?',hourGZ:m.hourGZ||'?'};
+         dayGZ:m.dayGZ||'?',hourGZ:m.hourGZ||'?',
+         yearIdx:yIdx,monthIdx,dayIdx,hourIdx};
 }
 
 /* 落宫盘面速写 */
@@ -71,10 +85,10 @@ function palDesc(R,p){
   return{txt:s};
 }
 
-/* 与日干宫的生克（按落宫五行） */
-function relToDay(R,p,dayStem){
+/* 与日干宫的生克（按落宫五行）；dayXunIdx 为日柱六十甲子序（甲日按日柱旬遁干） */
+function relToDay(R,p,dayStem,dayXunIdx){
   if(!p)return{rel:'—'};
-  const dp=ganPal(R,dayStem);
+  const dp=ganPal(R,dayStem,dayXunIdx);
   if(p===dp)return{rel:'自身'};
   const w=PAL[p].wx,wd=PAL[dp].wx;
   if(w===wd)return{rel:'比和'};
@@ -160,10 +174,10 @@ const CATS={
 function resolve(R,it,py){
   let pal=null,sym='';
   switch(it.t){
-    case 'gan日':sym=py.day;pal=ganPal(R,py.day);break;
-    case 'gan时':sym=py.hour;pal=ganPal(R,py.hour);break;
-    case 'gan年':sym=py.year;pal=ganPal(R,py.year);break;
-    case 'gan月':sym=py.month;pal=ganPal(R,py.month);break;
+    case 'gan日':sym=py.day;pal=ganPal(R,py.day,py.dayIdx);break;
+    case 'gan时':sym=py.hour;pal=ganPal(R,py.hour,py.hourIdx);break;
+    case 'gan年':sym=py.year;pal=ganPal(R,py.year,py.yearIdx);break;
+    case 'gan月':sym=py.month;pal=ganPal(R,py.month,py.monthIdx);break;
     case 'gan戊':sym='戊(甲子)';pal=ganPal(R,'戊');break;
     case 'gan自':sym=it.s;pal=ganPal(R,it.s);break;
     case '门':sym=it.s;pal=doorPal(R,it.s);break;
@@ -174,7 +188,7 @@ function resolve(R,it,py){
     default:sym=it.s||'';pal=null;
   }
   const d=palDesc(R,pal);
-  const rl=relToDay(R,pal,py.day);
+  const rl=relToDay(R,pal,py.day,py.dayIdx);
   return{sym,role:it.role,pal,desc:d.txt,rel:rl.rel};
 }
 

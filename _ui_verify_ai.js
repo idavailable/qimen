@@ -413,6 +413,20 @@ g('aiMode').value='auto';
      '实际='+g('iClock').value+'/'+g('iZi').value+'/'+g('iJi').value);
   delete g('iClock').options;delete g('iZi').options;delete g('iJi').options;
 
+  /* L11 yCat 同样走白名单：旧档/云端档 cat 不在 10 类内 → 回退默认。
+     旧代码直接 yCat.value=脏值会把选择框置空，renderYongshen 读到 '' → YS.take null → t.items 抛错 */
+  g('yCat').options=YS.ALL.map(v=>({value:v}));
+  loadParams({date:'2026-10-11',time:'08:00',lon:'118',cat:'bogus'});
+  ck('L11 非法 cat 回退默认（不置空）',g('yCat').value==='qiucai','实际='+g('yCat').value);
+  loadParams({date:'2026-10-11',time:'08:00',lon:'118',cat:'jibing'});
+  ck('L12 合法 cat 原样恢复',g('yCat').value==='jibing','实际='+g('yCat').value);
+  /* L13 守卫：脏 catId 直调 renderYongshen 不抛错（不渲染而非崩页面） */
+  g('yCat').value='bogus';
+  let yErr='';
+  try{renderYongshen(curR);}catch(e){yErr=String(e);}
+  ck('L13 renderYongshen 脏类别不抛错',yErr==='','实际='+yErr);
+  delete g('yCat').options;g('yCat').value='qiucai';
+
   /* 复位：避免污染后续（本组是最后一组，仍保持干净） */
   try{localStorage.removeItem('qm_code_v1');localStorage.removeItem('qm_all_v1');}catch(e){}
   g('savesCode').value='';g('savesAll').checked=false;

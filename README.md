@@ -25,8 +25,8 @@ functions/api/          ← Pages Functions（不进静态产物）
   records.js            D1 解读记录：列表 / 详情 / 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（400 项）
-sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（116 项）
+test.js                 回归测试（418 项）
+sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（119 项）
 _audit_dom.js           jsdom 真实 DOM 复核（10 项：换局类别/停止文案/换盘历史/芯片覆盖/对比列等高滚动）
 schema.sql              D1 建表
 wrangler.toml           Pages 配置（含 D1 绑定）
@@ -97,8 +97,8 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test          # 400 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推）
-npm run ui:verify # 116 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
+npm test          # 418 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推）
+npm run ui:verify # 119 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
 node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
 ```
 
@@ -153,6 +153,20 @@ node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHT
 | 读档/删除 | 全量拉到的行带 `admin:true`：`loadSave` 先命中最近一次渲染的云端行（跨网络条目不在默认列表里）；`delSave` 对这类行附 `&code=`（服务端只有管理口令能删他人/他网络的存档） |
 | 顺带修（P3） | `loadParams` 由直接 `select.value=` 改为 `pickOpt()` 白名单回退：存档值不在当前 `<option>` 内时（旧档/云端旧档/选项改版）回退默认值，不再把选择框置空——空值会让 `cast()` 的时干入中寄 `parseInt('')` 得 NaN |
 | 测试 | `test.js` **400/400**（新增 30.35–30.40：面板入口、全量 URL、admin 标记、删除附口令、持久化键名、pickOpt 三处）· 沙箱 **116/116**（新增 L 组 11 项：默认不带 all/code、全量查询、跨网络存档入列、读档命中、口令错误提示、删除附口令、持久化、pickOpt 回退与合法值恢复）· jsdom **10/10** |
+
+## 2026-10-14 第九轮（全面审计：甲取旬口径 + 两处健壮性修复）
+
+对 engine.js / yongshen.js / interpret.js / index.html / prompt.js×2 / functions/api 全量通读，并用权威资料交叉核验定局链条（符头三元、阴阳遁界、地盘布干序、值使门飞行含中宫计步与寄宫、九星八门八神旋转、旬空驿马、三奇应克 24 项、十干克应 81 格）。**算法主体未发现错误**；确认并修复 3 处：
+
+| 编号 | 级别 | 问题 | 修复 |
+|---|---|---|---|
+| P2-1 | 逻辑 | `yongshen.js` 的 `ganPal()` 对「甲」一律取**时柱旬**六仪；而 `engine.js` 盘面文字 `R.luo.dayDun` 用的是**日柱旬**。甲日用神表「求测人落 Z 宫」与盘面「日干甲（遁 X）落 Y 宫」给出两个不同答案（实测 2026-01-10 甲申日：盘面落 1 宫、旧用神逻辑落 8 宫） | `ganPal(R,g,xunIdx)` 按**本柱旬**遁干：日干传日柱序、时干传时柱序、年干/月干传各自柱序（`pillars()` 增补 `yearIdx/monthIdx/dayIdx/hourIdx`，月柱序由五虎遁月干与节气月支解中国剩余定理得出）；`relToDay` 同步收日柱序；缺省第三参时退化为时柱序（向后兼容 paipan 直出与 2 参调用） |
+| P2-2 | 代码 | `loadParams` 的 `yCat` 直赋不过白名单：旧档/云端档 `cat` 不在 10 类内时下拉被置空，`renderYongshen` 读到 `''` → `YS.take` 返回 null → `t.items` 抛 TypeError，读档后整页渲染崩掉（第八轮只给 iClock/iZi/iJi 加了 pickOpt，漏了 yCat） | 改走 `pickOpt('yCat',p.cat,'qiucai')`；`renderYongshen` 增加 `if(!t)return` 守卫（脏值不渲染而非崩页面） |
+| P3-1 | 代码 | `records.js`/`saves.js` 的 `limit`/`offset` 解析：`?limit=abc` → `parseInt` 得 NaN → `Math.min/max` 传 NaN 仍为 NaN → D1 `bind(NaN)` → SQLite `LIMIT NULL` 等于**无上限**，一次拖回全表 | `_lib.clampInt(v,def,lo,hi)` 统一守卫，非法值回落默认并夹区间；两接口改用它 |
+
+| 测试 | `test.js` **418/418**（甲取旬口径 13 项 + clampInt 5 项）· 沙箱 **119/119**（新增 L11–L13：yCat 白名单回退、合法值恢复、脏类别不抛错）· jsdom **10/10** |
+
+审计中核对为**正确、未改动**的关键实现：拆补定局全链（符头→元→节气三元局表→阴阳遁）、地盘布干序＝九宫数序 1→9 含中五、值使门按九宫数序飞（中宫计一步、落 5 寄宫，与《同安康奇门起局歌》两实例逐字吻合）、转盘旋转、天禽寄宫、旬空、驿马、三奇得使/入墓/击刑、门迫门制、五不遇时、十干克应 81 格、三奇应克 24 项、`prompt.js` 两份逐字一致、`models.js` 密钥可用性判定。
 
 ## 路线图
 

@@ -95,6 +95,15 @@ function cleanHistory(history) {
 }
 function errMsg(msg, status) { return json({ error: String(msg) }, status || 400); }
 
+/* ---------- 分页参数守卫 ----------
+   parseInt('abc') → NaN，Math.min/max 传 NaN 仍得 NaN，D1 bind(NaN) 后 SQLite LIMIT NULL
+   等于无上限——一次拖回全表。统一走这里：非法值回落默认并夹到 [lo,hi]。 */
+function clampInt(v, def, lo, hi) {
+  const n = parseInt(v, 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(Math.max(n, lo), hi);
+}
+
 /* ---------- IP（仅用于限流与留痕，不做指纹存储原文） ---------- */
 function clientIP(request) {
   return (request.headers && request.headers.get('CF-Connecting-IP')) || 'unknown';
@@ -308,6 +317,7 @@ export { parseSSEChunk };
 export { stripThinking };
 export { cleanHistory };
 export { errMsg };
+export { clampInt };
 export { clientIP };
 export { rateLimited };
 export { saveReading };

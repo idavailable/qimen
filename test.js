@@ -484,6 +484,35 @@ ck('疾病-病星=天芮',jb.items.find(x=>x.role==='病星（落宫定部位）
 const P=QM.paipan(1,1,0,2);
 try{YS.take(P,'qiucai');ck('paipan 不抛错',true,true);}catch(e){ck('paipan 不抛错',false,false);}
 
+/* ---- 甲取旬口径：日/时/年/月干为甲时按【本柱旬】遁六仪，与 R.luo 口径一致 ---- */
+{
+  // 2026-01-10 甲申日：日干甲 → 甲申旬 → 遁庚 → 应与 R.luo.dayDun/dayPal 一致
+  const Ra=QM.cast(2026,1,10,12,0,{lon:120,clock:'true',ziSwap:true,jg:2});
+  const pa=YS.pillars(Ra);
+  ck('甲申日 dayDun=庚',Ra.luo.dayDun,'庚');
+  ck('甲申日 ganPal(日旬)=dayPal',YS.ganPal(Ra,'甲',pa.dayIdx),Ra.luo.dayPal);
+  ck('甲申日 求测人落宫=dayPal',YS.take(Ra,'qiucai').items[0].pal,Ra.luo.dayPal);
+  ck('甲申日 relToDay=自身',YS.relToDay(Ra,YS.ganPal(Ra,'甲',pa.dayIdx),'甲',pa.dayIdx).rel,'自身');
+  // 同一时刻若误用时柱旬（甲午→辛）会落到别宫，证明两口径确实不同
+  ck('甲申日 时柱旬≠日柱旬（防回归）',YS.ganPal(Ra,'甲',pa.hourIdx)!==Ra.luo.dayPal,true);
+  // 缺省第三参退化为时柱序（向后兼容 2 参调用）
+  ck('ganPal 2 参兼容（退化为时旬）',YS.ganPal(Ra,'甲'),YS.ganPal(Ra,'甲',pa.hourIdx));
+  // 年干甲：2014 甲午年 → 甲午旬 → 辛
+  const Ry=QM.cast(2014,3,1,12,0,{lon:120,clock:'true',ziSwap:true,jg:2});
+  const pyy=YS.pillars(Ry);
+  ck('甲午年 年干=甲',pyy.year,'甲');
+  ck('甲午年 ganPal(年旬)遁辛',QM.XUN_YI[QM.gz(pyy.yearIdx-pyy.yearIdx%10)],'辛');
+  // 月干甲：甲午年戌月（寒露后）→ 甲戌月 → 甲戌旬 → 己
+  const Rm=QM.cast(2014,10,15,12,0,{lon:120,clock:'true',ziSwap:true,jg:2});
+  const pmm=YS.pillars(Rm);
+  ck('甲戌月 月干=甲',pmm.month,'甲');
+  ck('甲戌月 monthIdx=10（甲戌）',pmm.monthIdx,10);
+  ck('甲戌月 ganPal(月旬)遁己',QM.XUN_YI[QM.gz(pmm.monthIdx-pmm.monthIdx%10)],'己');
+  // pillars 序数与 meta 对齐
+  ck('pillars dayIdx=meta.dayIdx',pa.dayIdx,Ra.meta.dayIdx);
+  ck('pillars hourIdx=meta.hourIdx',pa.hourIdx,Ra.meta.hourIdx);
+}
+
 /* ---- 廿六、M4 AI 流式解读 ---- */
 console.log('\n=== 廿六、M4 AI 流式解读（interpret.js） ===');
 const QMI=require('./public/interpret.js');
@@ -738,6 +767,17 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   r2=await fr.handle(new Request('https://x/api/records'),{});
   ck('27.25 未绑定 D1 → 500',r2.status===500,true);
 
+  /* 27.25a clampInt：非法 limit/offset 不得把 NaN 绑进 SQL（D1 bind(NaN) → LIMIT NULL = 无上限） */
+  ck('27.25b clampInt 非法值回落默认',L.clampInt('abc',20,1,100),20);
+  ck('27.25c clampInt 夹到上下限',L.clampInt('999',20,1,100)+','+L.clampInt('-5',20,1,100),'100,1');
+  ck('27.25d clampInt 空值回落默认',L.clampInt(null,20,1,100),20);
+  db=fakeD1();
+  r2=await fr.handle(new Request('https://x/api/records?limit=abc&offset=xyz'),{QM_DB:db});
+  const limRec=db.log.find(x=>x.sql.indexOf('LIMIT')>=0&&x.args&&x.args.length);
+  ck('27.25e records limit=abc → 回落 20 且无 NaN',
+    !!limRec&&limRec.args.indexOf(20)>=0&&limRec.args.indexOf(0)>=0&&!limRec.args.some(a=>Number.isNaN(a)),
+    true,limRec?JSON.stringify(limRec.args):'none');
+
   /* 27.26 限流（软开关） */
   resp=await fi.handle(mkReq({pan:panTxt}),{QM_API_KEY:'k',QM_DB:fakeD1(),RATE_LIMIT_PER_MIN:'1'});
   await readSSE(resp);
@@ -869,6 +909,13 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?limit=10'),{QM_DB:d1s});
   j=await r.json();
   ck('29.9 GET 列表结构（脏 params 置空不抛错）',Array.isArray(j.saves)&&j.saves.length>=1&&j.saves[0].params===null,true,JSON.stringify(j.saves&&j.saves[0]));
+
+  /* 29.9a 非法 limit 不得把 NaN 绑进 SQL（LIMIT NULL = 无上限，一次拖全表） */
+  d1s=fakeD1();
+  r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?limit=abc'),{QM_DB:d1s});
+  const sLim=d1s.log.find(x=>x.sql.indexOf('LIMIT')>=0&&x.args&&x.args.length);
+  ck('29.9b saves limit=abc → 回落 50 且无 NaN',
+    !!sLim&&sLim.args.indexOf(50)>=0&&!sLim.args.some(a=>Number.isNaN(a)),true,sLim?JSON.stringify(sLim.args):'none');
 
   r=await sv.handle(new Request('https://qimen.pages.dev/api/saves?id=3',{method:'DELETE'}),{QM_DB:d1s});
   j=await r.json();
@@ -1066,7 +1113,8 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
     ck('30.38 删跨网络存档附口令', !!del && del[0].indexOf('row.admin&&code') >= 0 && del[0].indexOf('&code=') >= 0, true);
     ck('30.39 口令与勾选持久化（KEY: qm_code_v1 / qm_all_v1）', html.indexOf("'qm_code_v1'") >= 0 && html.indexOf("'qm_all_v1'") >= 0, true);
     const lp = html.match(/function loadParams\(p\)\{[\s\S]*?\n\}/);
-    ck('30.40 读档下拉值走选项白名单（非法值回退默认，不置空）', !!lp && (lp[0].match(/pickOpt\(/g) || []).length === 3, true);
+    ck('30.40 读档下拉值走选项白名单（iClock/iZi/iJi/yCat 四处，非法值回退不置空）',
+      !!lp && (lp[0].match(/pickOpt\(/g) || []).length === 4 && lp[0].indexOf("pickOpt('yCat'") >= 0, true);
   }
 
   globalThis.fetch = origFetch;

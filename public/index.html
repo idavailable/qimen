@@ -85,7 +85,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
 <body>
 
 <h1>奇门遁甲决策工具</h1>
-<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 400 项全过 + 浏览器沙箱全流程 116 项全过</div>
+<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 418 项全过 + 浏览器沙箱全流程 119 项全过</div>
 
 <div class="card">
   <h2>一、输入</h2>
@@ -289,7 +289,10 @@ function loadParams(p){
   pickOpt('iClock',p.clock,'true');
   pickOpt('iZi',p.zi,'23');
   pickOpt('iJi',p.ji,'2');
-  if(document.getElementById('yCat')&&p.cat)document.getElementById('yCat').value=p.cat;
+  /* yCat 同样走白名单：旧档/云端档 cat 值不在当前 10 类里时，直接赋值会把选择框置空，
+     随后 renderYongshen 读到 '' → YS.take 返回 null → t.items 抛错，整页渲染崩掉 */
+  if(document.getElementById('yCat')&&p.cat!==undefined&&p.cat!==null&&p.cat!=='')
+    pickOpt('yCat',p.cat,'qiucai');
   if(document.getElementById('aiQ'))document.getElementById('aiQ').value=p.q||'';
 }
 async function savePan(){
@@ -455,6 +458,7 @@ function renderYongshen(R){
   if(!R||!R.meta||R.meta.test)return; // 校验用局无日时干支，用神区不可用
   const catId=document.getElementById('yCat')?document.getElementById('yCat').value:'qiucai';
   const t=YS.take(R,catId);
+  if(!t)return; // 类别 id 不在表内（旧档脏值/控制台直调）：不渲染而非抛错
   const body=t.items.map(x=>{
     const wx=x.pal&&x.pal>=1&&x.pal<=9?PAL[x.pal].wx:'—';
     const kong=x.desc.includes('旬空')?' <span class="tag kong" style="position:static">旬空</span>':'';
@@ -617,7 +621,7 @@ function render(R,m){
       值符加时干转盘 · 值使按时序洛书飞宫 · 八门随值使转宫 · 八神阳顺阴逆 · 天禽随芮、中宫干寄宫并显 · 旬空（空亡宫）· 日/年驿马 · 日干·时干落宫<br>
       <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
       <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示<br>
-      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 400 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推**）全部通过<br><br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 418 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **甲取旬按本柱旬（日干≠时干口径）** / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推** / **分页参数 NaN 守卫**）全部通过<br><br>
       <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
       两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
       非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·

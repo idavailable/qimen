@@ -70,7 +70,8 @@ async function handle(request, env) {
   }
 
   if (request.method === 'GET') {
-    const limit = Math.min(Math.max(parseInt(sp.get('limit') || '50', 10), 1), 100);
+    /* 非法 limit（如 ?limit=abc）不得把 NaN 绑进 SQL——LIMIT NULL 等于无上限 */
+    const limit = L.clampInt(sp.get('limit'), 50, 1, 100);
     /* F5：默认只回本网络的存档；全量需管理口令 */
     const all = sp.get('all') === '1';
     if (all && !env.ACCESS_CODE) return L.errMsg('未设置 ACCESS_CODE，禁止全量查询', 403);

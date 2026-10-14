@@ -50,8 +50,9 @@ async function handle(request, env) {
       if (!row) return L.errMsg('记录不存在', 404);
       return L.json({ record: row });
     }
-    const limit = Math.min(Math.max(parseInt(q.get('limit') || '20', 10), 1), 100);
-    const offset = Math.max(parseInt(q.get('offset') || '0', 10), 0);
+    /* 非法 limit/offset（如 ?limit=abc）不得把 NaN 绑进 SQL——LIMIT NULL 等于无上限 */
+    const limit = L.clampInt(q.get('limit'), 20, 1, 100);
+    const offset = L.clampInt(q.get('offset'), 0, 0, 1000000);
     /* F5：默认只回本网络的记录 */
     const rs = all
       ? await env.QM_DB.prepare(
