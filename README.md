@@ -13,8 +13,9 @@
 ## 目录结构
 
 ```
-public/                 ← 部署根（pages_build_output_dir），只有这 5 个文件进公网
-  index.html            单页 UI
+public/                 ← 部署根（pages_build_output_dir），只有这些文件进公网
+  index.html            单页 UI（只含结构+样式+5 个 script 引用）
+  app.js                界面层全部逻辑（第十轮由内联脚本抽离，沙箱/jsdom/test 直接读它，不再有手工同步环节）
   engine.js             M1 起局引擎（真太阳时 / 定局 / 四盘 / 旬空驿马）
   yongshen.js           M3 用神取法（10 类问事）
   prompt.js             系统提示词唯一来源（前后端共用，test.js 有同步校验）
@@ -172,3 +173,9 @@ node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHT
 
 - ✅ M1 起局引擎 · M2 格局库（十干克应 81 格等）· M3 用神取法 · M4 AI 流式解读（前端直连 + 服务端代理 + D1）
 - ⏳ 置闰法（超神接气）· 飞盘派 —— 有流派争议，待《兵法奇门》第二部核校后再定
+
+## 第十轮 · 改进路线落实（2026-10-14）
+
+| 项 | 内容 |
+|---|---|
+| P0 工程 | 内联脚本抽离为 `public/app.js`（`index.html` 只留 `<script src="app.js">`），删除 `_ui_inline.js`——「改完内联脚本再手工同步副本」这一漂移根源被根除；`sandbox_ui_verify.js`/`_audit_dom.js`/`test.js` 改为直接读 `app.js` |

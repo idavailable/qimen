@@ -432,4 +432,34 @@ g('aiMode').value='auto';
   g('savesCode').value='';g('savesAll').checked=false;
   location.protocol='file:';
   fetch=savedFetchL;
+
+  /* M · Markdown 渲染（第十轮）：流式安全 + XSS 防护 + 双轨输出 */
+  console.log('\n=== M · Markdown 渲染（沙箱） ===');
+  ck('M1 标题/粗体/斜体', mdRender('# 盘面要点\n\n**值符** 落 *艮* 宫').includes('<h2>盘面要点</h2>')&&
+     mdRender('**值符**').includes('<b>值符</b>')&&mdRender('*艮*').includes('<i>艮</i>'),
+     '实际='+mdRender('# 盘面要点\n\n**值符** 落 *艮* 宫'));
+  ck('M2 无序/有序列表', mdRender('- 甲\n- 乙').includes('<ul><li>甲</li><li>乙</li></ul>')&&
+     mdRender('1. 一\n2. 二').includes('<ol><li>一</li><li>二</li></ol>'),'');
+  const mdTbl=mdRender('| 宫 | 门 |\n|---|---|\n| 坎 | 休 |');
+  ck('M3 表格（表头/单元格/分隔行剔除）', mdTbl.includes('<table>')&&mdTbl.includes('<th>宫</th>')&&
+     mdTbl.includes('<td>坎</td>')&&!mdTbl.includes('|---'),'实际='+mdTbl);
+  const mdXss=mdRender('<script>alert(1)</script>');
+  ck('M4 XSS 转义（不出现裸 script 标签）', !mdXss.includes('<script>')&&mdXss.includes('&lt;script&gt;'),'实际='+mdXss);
+  ck('M5 流式未闭合标记按原文显示', mdRender('**未闭合的粗体').includes('**未闭合的粗体')&&
+     !mdRender('**未闭合的粗体').includes('<b>'),'');
+  ck('M6 行内代码', mdRender('用 `值符` 落宫').includes('<code>值符</code>'),'');
+  ck('M7 链接协议净化（javascript: 不生成 a 标签）', !mdRender('[点我](javascript:alert(1))').includes('<a ')&&
+     mdRender('[奇门](https://qimen.dhxlsfn.dpdns.org)').includes('href="https://qimen.dhxlsfn.dpdns.org"'),'');
+  ck('M8 分隔线', mdRender('---')==='<hr>','实际='+mdRender('---'));
+  /* M9 双轨集成：服务端流式一轮后，列内 textContent=原文、innerHTML=渲染结果 */
+  location.protocol='https:';
+  g('aiMode').value='server';aiSyncMode();
+  selModels.length=0;selModels.push('gemini-3.8-flash');
+  await aiRun();
+  const mdCol=aiColBody('gemini-3.8-flash');
+  ck('M9 流式双轨（textContent 原文 / innerHTML 渲染）',
+     mdCol.textContent==='一、盘面要点：值符落宫，用神生克。'&&
+     mdCol.innerHTML==='<p>一、盘面要点：值符落宫，用神生克。</p>',
+     '实际 textContent='+JSON.stringify(mdCol.textContent)+' innerHTML='+JSON.stringify(mdCol.innerHTML));
+  selModels.length=0;aiClearHist();
 }

@@ -3,8 +3,8 @@ const fs=require('fs'),path=require('path');
 const {JSDOM}=require('C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules/jsdom');
 const PB=path.join(__dirname,'public');
 const html=fs.readFileSync(path.join(PB,'index.html'),'utf8');
-/* 第六轮：正则改为换行无关（\r?\n）——Windows 检出为 CRLF，旧的写死 \n 会直接匹配失败 */
-const inline=html.match(/<script>\r?\n([\s\S]*?)<\/script>\s*<\/body>/)[1];
+/* 第十轮：界面脚本已抽离为 public/app.js（index.html 只留 <script src>），jsdom 直接读文件 */
+const inline=fs.readFileSync(path.join(PB,'app.js'),'utf8');
 
 let pass=0,fail=0;
 const ck=(n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;console.log((ok?'  ✅ ':'  ❌ ')+n+(ok?'':'  实际='+JSON.stringify(a)+' 期望='+JSON.stringify(e)));};
@@ -25,6 +25,9 @@ w.fetch=function(url,init){
   if(u.indexOf('/api/saves')>=0&&(!init||!init.method||init.method==='GET'))
     return Promise.resolve({ok:true,status:200,json:()=>Promise.resolve({saves:[],total:0})});
   const enc=new TextEncoder();
+  /* 第十轮：stub 原为「永不断流」，只能靠 20 万字守卫刹停（_audit_dom 整轮 90s+）。
+     F25 只关心两轮对话历史，2 片后正常 done 即可，行为覆盖不变 */
+  let __n=0;
   return Promise.resolve({ok:true,status:200,
     headers:{get:h=>h==='content-type'?'text/event-stream':null},
     body:{getReader:()=>({read:()=>{
@@ -35,7 +38,8 @@ w.fetch=function(url,init){
         if(init&&init.signal)init.signal.addEventListener('abort',()=>
           rej(Object.assign(new Error('The operation was aborted.'),{name:'AbortError'})),{once:true});
       });
-      return Promise.resolve({done:false,value:enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'甲'}}]})+'\n\n')});
+      if(__n++<2)return Promise.resolve({done:false,value:enc.encode('data: '+JSON.stringify({choices:[{delta:{content:'甲'}}]})+'\n\n')});
+      return Promise.resolve({done:true});
     },cancel:()=>Promise.resolve()})},
     json:()=>Promise.resolve({}),text:()=>Promise.resolve('')});
 };

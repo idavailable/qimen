@@ -63,6 +63,18 @@ function buildPanText(R,catId){
     for(const x of t.items){
       L.push('  '+x.sym+'（'+x.role+'）：'+(x.pal?('落'+PAL[x.pal].gua+x.pal+'宫'+PAL[x.pal].wx+(x.desc.includes('旬空')?'，旬空':'')):'未上盘')+' — '+x.rel);
     }
+    /* 第十轮：分类断法模板（与 CATS 同源于 yongshen.js，只作断法指引，不改写盘面事实） */
+    const rule=YS.catRule(catId);
+    if(rule)L.push('','【本类断法】'+rule);
+    /* 第十轮：应期结构化线索（YS.yingqi：尺度 + 应期支 + 值使宫数，只给线索不断吉凶） */
+    const yq=YS.yingqi(R);
+    if(yq&&yq.branch){
+      L.push('','【应期推算】（结构化线索，供断应期参考；不得改写盘面事实）');
+      L.push('用神（日干'+py.day+'）落'+PAL[yq.pal].gua+yq.pal+'宫（地盘支'+yq.palZhi.join('、')+'）');
+      L.push('尺度：'+yq.scale+'（'+yq.scaleWhy+'）→ 以'+yq.scaleUnit+'断');
+      L.push('应期支：'+yq.branch+' —— '+yq.basis);
+      if(yq.valueShi)L.push('值使门落'+yq.valueShi+'宫 → 事期约 '+yq.valueShi+'（随尺度取年/月/日/时，伏吟延长、反吟提前）');
+    }
   }
   return L.join('\n').slice(0,LIMITS.panText);
 }

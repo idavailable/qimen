@@ -526,6 +526,47 @@ ck('buildPanText 含值符值使',panTxt.includes('值符：')&&panTxt.includes(
 ck('buildPanText 含旬空驿马',panTxt.includes('旬空：')&&panTxt.includes('驿马：'),true);
 ck('buildPanText 含格局检出',panTxt.includes('格局检出'),true);
 ck('buildPanText 含用神类别',panTxt.includes('所问类别：经营求财'),true);
+/* ---- 分类断法模板（第十轮） ---- */
+console.log('\n=== 分类断法模板（CAT_RULES → 提示词） ===');
+{
+  const cats=YS.ALL;
+  ck('32.0 CATS 类别数仍为 10',cats.length,10);
+  ck('32.0b CAT_RULES 与 CATS 一一对应',cats.every(c=>YS.CAT_RULES[c])&&Object.keys(YS.CAT_RULES).length===cats.length,true);
+  let ruleBad=0,panBad=0;
+  for(const c of cats){
+    const rule=YS.catRule(c);
+    if(!rule||rule.length<20||!/纲领：/.test(rule)||!/断法：/.test(rule))ruleBad++;
+    const txt=QMI.buildPanText(R_ys,c);
+    if(!txt||txt.indexOf('【本类断法】'+rule)<0)panBad++;
+  }
+  ck('32.1 每类规则含「纲领/断法」且长度合规',ruleBad,0);
+  ck('32.2 buildPanText 对每类都注入本类断法',panBad,0);
+  const noRule=QMI.buildPanText(R_ys,'bogus');
+  ck('32.3 未知类别不注入断法块（也不崩）',typeof noRule==='string'&&!noRule.includes('【本类断法】'),true);
+  ck('32.4 断法块在用神列表之后',panTxt.indexOf('所问类别：')<panTxt.indexOf('【本类断法】'),true);
+}
+/* ---- 应期结构化（第十轮） ---- */
+console.log('\n=== 应期结构化推算（YS.yingqi → 提示词） ===');
+{
+  const Rq1=QM.cast(2024,11,5,10,30,{lon:120,clock:'true',ziSwap:true,jg:2}); // 癸酉日丁巳时·阴八局
+  const q1=YS.yingqi(Rq1);
+  ck('33.1 尺度：日干落阴遁内盘 → 近快',q1.scale,'近快');
+  ck('33.2 应期支：用神宫卯逢日支酉冲 → 逢冲以合（戌）',q1.branch,'戌');
+  const Rq2=QM.cast(2026,10,14,9,0,{lon:120,clock:'true',ziSwap:true,jg:2}); // 辛酉日·用神宫午逢旬空
+  const q2=YS.yingqi(Rq2);
+  ck('33.3 应期支：用神宫逢旬空 → 自日支酉顺数先遇冲空（子）',q2.branch,'子');
+  const Rq3=QM.cast(2024,8,20,15,30,{lon:120,clock:'true',ziSwap:true,jg:2}); // 丙辰日丙申时
+  const q3=YS.yingqi(Rq3);
+  ck('33.4 应期支：用神宫酉逢日支辰合 → 逢合以冲（卯）',q3.branch,'卯');
+  ck('33.5 尺度：外盘 → 远慢',q3.scale,'远慢');
+  const txt=QMI.buildPanText(Rq2,'qiucai');
+  ck('33.6 buildPanText 含【应期推算】块',txt.indexOf('【应期推算】')>=0,true);
+  ck('33.7 应期块含尺度/应期支/值使宫数',/尺度：/.test(txt)&&/应期支：/.test(txt)&&/值使门落/.test(txt),true);
+  ck('33.8 应期块不断吉凶（无「吉/凶」断言字样）',!/吉凶/.test(txt.split('【应期推算】')[1]||''),true);
+  ck('33.9 paipan 直出（无 meta）不抛错',YS.yingqi(QM.paipan(1,1,0,2)),null);
+}
+
+
 ck('buildPanText 超长截断≤4000',panTxt.length<=QMI.LIMITS.panText,true);
 ck('buildPanText(paipan直出)=null 守卫',QMI.buildPanText(P,'qiucai'),null);
 
@@ -565,6 +606,116 @@ ck('SSE 守卫②REPLY_OVERFLOW',QMI.parseSSEChunk('data: [DONE]\n',bigFull).cut
 // 配置存取（Node 无 localStorage → null/false，不抛错）
 ck('loadCfg Node环境=null',QMI.loadCfg(),null);
 ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
+
+/* ---- 三十一、历法锚点（第十轮：lunar-javascript 交叉校验固化）----
+   数据来源：tools/xcheck_calendar.js 对 lunar-javascript（独立天文实现）全量比对：
+   1900–2100 共 4824 个节气、11908 个日柱、201 个立春翻转点零日界偏差，
+   节气时刻最大差 13 分钟（Meeus 低精度太阳模型理论精度，定局按日不受影响）。
+   此处固化 2024–2026 全 72 节气时刻与 8 个日柱锚点作回归防线，不引入外部依赖。
+   单项目容差 15 分钟（模型当前最大偏差 12.4 分钟；15 分钟用于抓「差出整个节气」级的退化，
+   即交节时刻算错到邻近节气）。 */
+console.log('\n=== 三十一、历法锚点（节气时刻 / 日柱） ===');
+const JQ_FIXTURE=[
+['2024-01-06',2460315.3676], // 小寒 04:49
+  ['2024-01-20',2460330.0884], // 大寒 22:07
+  ['2024-02-04',2460344.8522], // 立春 16:27
+  ['2024-02-19',2460359.6758], // 雨水 12:13
+  ['2024-03-05',2460374.5991], // 惊蛰 10:22
+  ['2024-03-20',2460389.6295], // 春分 11:06
+  ['2024-04-04',2460404.7933], // 清明 15:02
+  ['2024-04-19',2460420.0832], // 谷雨 21:59
+  ['2024-05-05',2460435.5070], // 立夏 08:10
+  ['2024-05-20',2460451.0413], // 小满 20:59
+  ['2024-06-05',2460466.6735], // 芒种 12:09
+  ['2024-06-21',2460482.3687], // 夏至 04:51
+  ['2024-07-06',2460498.0973], // 小暑 22:20
+  ['2024-07-22',2460513.8225], // 大暑 15:44
+  ['2024-08-07',2460529.5064], // 立秋 08:09
+  ['2024-08-22',2460545.1216], // 处暑 22:55
+  ['2024-09-07',2460560.6329], // 白露 11:11
+  ['2024-09-22',2460576.0303], // 秋分 20:43
+  ['2024-10-08',2460591.2916], // 寒露 02:59
+  ['2024-10-23',2460606.4269], // 霜降 06:14
+  ['2024-11-07',2460621.4306], // 立冬 06:20
+  ['2024-11-22',2460636.3309], // 小雪 03:56
+  ['2024-12-06',2460651.1368], // 大雪 23:17
+  ['2023-12-22',2460300.6440], // 冬至 11:27
+  ['2025-01-05',2460680.6061], // 小寒 10:32
+  ['2025-01-20',2460695.3334], // 大寒 04:00
+  ['2025-02-03',2460710.0906], // 立春 22:10
+  ['2025-02-18',2460724.9212], // 雨水 18:06
+  ['2025-03-05',2460739.8384], // 惊蛰 16:07
+  ['2025-03-20',2460754.8760], // 春分 17:01
+  ['2025-04-04',2460770.0337], // 清明 20:48
+  ['2025-04-20',2460785.3306], // 谷雨 03:56
+  ['2025-05-05',2460800.7481], // 立夏 13:57
+  ['2025-05-21',2460816.2880], // 小满 02:54
+  ['2025-06-05',2460831.9143], // 芒种 17:56
+  ['2025-06-21',2460847.6127], // 夏至 10:42
+  ['2025-07-07',2460863.3368], // 小暑 04:04
+  ['2025-07-22',2460879.0621], // 大暑 21:29
+  ['2025-08-07',2460894.7442], // 立秋 13:51
+  ['2025-08-23',2460910.3568], // 处暑 04:33
+  ['2025-09-07',2460925.8694], // 白露 16:51
+  ['2025-09-23',2460941.2634], // 秋分 02:19
+  ['2025-10-08',2460956.5286], // 寒露 08:41
+  ['2025-10-23',2460971.6604], // 霜降 11:50
+  ['2025-11-07',2460986.6695], // 立冬 12:04
+  ['2025-11-22',2461001.5664], // 小雪 09:35
+  ['2025-12-07',2461016.3782], // 大雪 05:04
+  ['2024-12-21',2460665.8893], // 冬至 17:20
+  ['2026-01-05',2461045.8494], // 小寒 16:23
+  ['2026-01-20',2461060.5729], // 大寒 09:44
+  ['2026-02-04',2461075.3348], // 立春 04:02
+  ['2026-02-18',2461090.1611], // 雨水 23:51
+  ['2026-03-05',2461105.0826], // 惊蛰 21:59
+  ['2026-03-20',2461120.1153], // 春分 22:45
+  ['2026-04-05',2461135.2778], // 清明 02:40
+  ['2026-04-20',2461150.5688], // 谷雨 09:39
+  ['2026-05-05',2461165.9922], // 立夏 19:48
+  ['2026-05-21',2461181.5255], // 小满 08:36
+  ['2026-06-05',2461197.1586], // 芒种 23:48
+  ['2026-06-21',2461212.8503], // 夏至 16:24
+  ['2026-07-07',2461228.5812], // 小暑 09:56
+  ['2026-07-23',2461244.3008], // 大暑 03:13
+  ['2026-08-07',2461259.9880], // 立秋 19:42
+  ['2026-08-23',2461275.5964], // 处暑 10:18
+  ['2026-09-07',2461291.1120], // 白露 22:41
+  ['2026-09-23',2461306.5036], // 秋分 08:05
+  ['2026-10-08',2461321.7703], // 寒露 14:29
+  ['2026-10-23',2461336.9014], // 霜降 17:37
+  ['2026-11-07',2461351.9112], // 立冬 17:52
+  ['2026-11-22',2461366.8079], // 小雪 15:23
+  ['2026-12-07',2461381.6198], // 大雪 10:52
+  ['2025-12-21',2461031.1271], // 冬至 23:03
+];
+let jqBad=0,jqMaxMin=0;
+for(const [d,jd] of JQ_FIXTURE){
+  const [y,m,dd]=d.split('-').map(Number);
+  const R=QM.cast(y,m,dd+3,12,0,{lon:120,clock:'true',ziSwap:true,jg:2}); // 交节后第 3 天仍在本节气内
+  const diffMin=Math.abs(R.meta.termJD-jd)*1440;
+  if(diffMin>jqMaxMin)jqMaxMin=diffMin;
+  if(diffMin>15)jqBad++;
+}
+ck('31.1 节气锚点 72 项全部在 15 分钟容差内',jqBad,0);
+ck('31.2 节气锚点最大偏差小于 13.5 分钟（Meeus 低精度模型量级）',jqMaxMin<13.5,true,'实际最大 '+jqMaxMin.toFixed(1)+' 分钟');
+const DAY_FIXTURE=[['1900-1-1','甲戌'],['1949-10-1','甲子'],['1984-2-2','丙寅'],['2000-1-1','戊午'],
+                   ['2024-2-4','戊戌'],['2024-12-31','己巳'],['2026-1-10','甲申'],['2026-10-14','辛酉']];
+let dayBad=0;
+for(const [d,g] of DAY_FIXTURE){
+  const [y,m,dd]=d.split('-').map(Number);
+  if(QM.cast(y,m,dd,12,0,{lon:120,clock:'true',ziSwap:true,jg:2}).meta.dayGZ!==g)dayBad++;
+}
+ck('31.3 日柱锚点 8 项全部一致（跨 1900/1949/1984/2000/2024/2026）',dayBad,0);
+/* 立春翻转：立春前后年柱应相差一位（2024 立春 16:27 / 2025 立春 22:10 北京时，锚点来自 lunar-javascript） */
+const lc24a=QM.cast(2024,2,4,13,0,{lon:120,clock:'true',ziSwap:false,jg:2});
+const lc24b=QM.cast(2024,2,4,20,0,{lon:120,clock:'true',ziSwap:false,jg:2});
+ck('31.4 2024 立春前年柱=癸卯',QM.gz(QM.yearGZIndex(lc24a.meta.gzYear)),'癸卯');
+ck('31.5 2024 立春后年柱=甲辰',QM.gz(QM.yearGZIndex(lc24b.meta.gzYear)),'甲辰');
+const lc25a=QM.cast(2025,2,3,20,0,{lon:120,clock:'true',ziSwap:false,jg:2});
+const lc25b=QM.cast(2025,2,3,23,0,{lon:120,clock:'true',ziSwap:false,jg:2});
+ck('31.6 2025 立春前年柱=甲辰',QM.gz(QM.yearGZIndex(lc25a.meta.gzYear)),'甲辰');
+ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'乙巳');
 
 // interpretStream：mock fetch 全流程
 (async()=>{
@@ -1091,7 +1242,7 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   /* 30.29–30.33 前端：对比列等高 + 内部滚动 + 提示词 */
   {
     const fsx = require('fs');
-    const html = fsx.readFileSync('./public/index.html', 'utf8');
+    const html = fsx.readFileSync('./public/index.html', 'utf8') + '\n' + fsx.readFileSync('./public/app.js', 'utf8');
     const m = html.match(/\.ai-col-body\{[^}]*\}/);
     ck('30.29 对比列固定高度（两边始终等高）', !!m && /height:\s*440px/.test(m[0]), true);
     ck('30.30 对比列超出即出滚动条', !!m && /overflow-y:\s*auto/.test(m[0]), true);
@@ -1104,7 +1255,7 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
   /* 30.35–30.40 跨设备读档：管理口令入口（前端接线，服务端能力早已具备） */
   {
     const fsx = require('fs');
-    const html = fsx.readFileSync('./public/index.html', 'utf8');
+    const html = fsx.readFileSync('./public/index.html', 'utf8') + '\n' + fsx.readFileSync('./public/app.js', 'utf8');
     ck('30.35 存档面板含口令输入与「读全部」勾选', html.indexOf('id="savesCode"') >= 0 && html.indexOf('id="savesAll"') >= 0, true);
     const all = html.match(/async function cloudSavesAll\(code\)\{[\s\S]*?\n\}/);
     ck('30.36 全量查询走 ?all=1&code=', !!all && all[0].indexOf('/api/saves?limit=100&all=1&code=') >= 0, true);

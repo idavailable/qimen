@@ -1,6 +1,6 @@
 /* M3+M4 UI 集成 · 真实浏览器全局模型沙箱全流程验证（驱动）
  * 模型：win 即全局对象（win.window=win; win.self=win; vm.createContext(win)）
- * 顺序：engine.js → yongshen.js → interpret.js → _ui_inline.js(init 自执行) → __ref → 验证脚本 → AI 异步组
+ * 顺序：engine.js → yongshen.js → interpret.js → app.js(init 自执行) → __ref → 验证脚本 → AI 异步组
  */
 const fs=require('fs'),path=require('path'),vm=require('vm');
 const dir=__dirname;const PB=path.join(dir,'public');
@@ -9,7 +9,7 @@ const srcE=fs.readFileSync(path.join(PB,'engine.js'),'utf8');
 const srcY=fs.readFileSync(path.join(PB,'yongshen.js'),'utf8');
 const srcP=fs.readFileSync(path.join(PB,'prompt.js'),'utf8');
 const srcI=fs.readFileSync(path.join(PB,'interpret.js'),'utf8');
-const srcU=fs.readFileSync(path.join(dir,'_ui_inline.js'),'utf8');
+const srcU=fs.readFileSync(path.join(PB,'app.js'),'utf8');
 const srcV=fs.readFileSync(path.join(dir,'_ui_verify_src.js'),'utf8');
 const srcH=fs.readFileSync(path.join(dir,'_ui_verify_ai.js'),'utf8');
 
@@ -82,7 +82,7 @@ async function main(){
   vm.runInContext(srcY,win,{filename:'yongshen.js'});
   vm.runInContext(srcP,win,{filename:'prompt.js'});
   vm.runInContext(srcI,win,{filename:'interpret.js'});
-  vm.runInContext(srcU,win,{filename:'_ui_inline.js'}); // init() 立即 aiLoadCfg + setNow + cast
+  vm.runInContext(srcU,win,{filename:'app.js'}); // init() 立即 aiLoadCfg + setNow + cast
 
   /* ---------- Node 侧参照值 ---------- */
   const Rq=QN.cast(2026,10,10,9,0,{lon:120,clock:'true',ziSwap:true,jg:2});

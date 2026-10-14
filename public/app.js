@@ -529,6 +529,66 @@ function midSafe(m){
   return m.replace(/[^a-zA-Z0-9]/g,'')+h.toString(36);
 }
 function aiColBody(id){return document.getElementById('col-'+midSafe(id));}
+/* ============================================================
+   轻量 Markdown 渲染（第十轮新增）
+   流式安全：先整体 HTML 转义再打标记，未闭合的星号标记按原文显示；
+   双轨输出：textContent 留原文（极简 DOM/测试断言兼容），innerHTML 放渲染结果。
+   支持：标题 / 粗体 / 斜体 / 删除线 / 行内代码 / 链接 / 列表 / 有序列表 /
+        引用 / 表格 / 分隔线 / 段落（段内换行 <br>）
+   ============================================================ */
+function mdEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function mdInline(s){
+  const keep=[];
+  const hold=html=>{keep.push(html);return '\u0001'+(keep.length-1)+'\u0002';};
+  s=s.replace(/`([^`\n]+)`/g,(m,c)=>hold('<code>'+c+'</code>'));
+  s=s.replace(/\*\*([^*\n]+)\*\*/g,(m,c)=>hold('<b>'+c+'</b>'));
+  s=s.replace(/~~([^~\n]+)~~/g,(m,c)=>hold('<del>'+c+'</del>'));
+  s=s.replace(/\*([^*\n]+)\*/g,(m,c)=>hold('<i>'+c+'</i>'));
+  s=s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g,(m,t,u)=>{
+    const url=/^https?:\/\//i.test(u)?u:'';           // 只放行 http(s)，防 javascript: 等
+    return hold(url?'<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+t+'</a>':t);
+  });
+  s=s.replace(/\u0001(\d+)\u0002/g,(m,i)=>keep[+i]);
+  return s;
+}
+function mdRender(src){
+  const lines=mdEsc(String(src||'')).replace(/\r\n?/g,'\n').split('\n');
+  let out='',i=0,para=[];
+  const flushPara=()=>{if(para.length){out+='<p>'+para.map(mdInline).join('<br>')+'</p>';para=[];}};
+  while(i<lines.length){
+    const ln=lines[i];
+    let m;
+    if(/^\s*$/.test(ln)){flushPara();i++;continue;}
+    if(m=ln.match(/^(#{1,4})\s+(.*)$/)){flushPara();const lv=m[1].length+1;out+='<h'+lv+'>'+mdInline(m[2].trim())+'</h'+lv+'>';i++;continue;}
+    if(/^\s*(-{3,}|\*{3,})\s*$/.test(ln)){flushPara();out+='<hr>';i++;continue;}
+    if(/^\s*>/.test(ln)){flushPara();const buf=[];while(i<lines.length&&/^\s*>/.test(lines[i])){buf.push(lines[i].replace(/^\s*>\s?/,''));i++;}out+='<blockquote>'+mdInline(buf.join(' '))+'</blockquote>';continue;}
+    if(/^\s*\|/.test(ln)){
+      const buf=[];while(i<lines.length&&/^\s*\|/.test(lines[i])){buf.push(lines[i]);i++;}
+      const rows=buf.filter(r=>!/^\s*\|?[\s:|-]+\|?\s*$/.test(r));
+      if(rows.length){
+        const cells=r=>r.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>mdInline(c.trim()));
+        const head=cells(rows[0]),body=rows.slice(1).map(cells);
+        out+='<table><thead><tr>'+head.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+          body.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+      }
+      continue;
+    }
+    if(m=ln.match(/^\s*[-*+]\s+(.*)$/)){
+      flushPara();const buf=[];
+      while(i<lines.length&&(m=lines[i].match(/^\s*[-*+]\s+(.*)$/))){buf.push(m[1]);i++;}
+      out+='<ul>'+buf.map(t=>'<li>'+mdInline(t)+'</li>').join('')+'</ul>';continue;
+    }
+    if(m=ln.match(/^\s*\d+[.、]\s*(.*)$/)){
+      flushPara();const buf=[];
+      while(i<lines.length&&(m=lines[i].match(/^\s*\d+[.、]\s*(.*)$/))){buf.push(m[1]);i++;}
+      out+='<ol>'+buf.map(t=>'<li>'+mdInline(t)+'</li>').join('')+'</ol>';continue;
+    }
+    para.push(ln);i++;
+  }
+  flushPara();
+  return out;
+}
+
 function aiColHead(id){return document.getElementById('head-'+midSafe(id));}
 function aiRenderCols(list){
   const out=document.getElementById('aiOut');
@@ -678,11 +738,26 @@ async function aiRun(){
         el.innerHTML='<span class="loading">'+esc(t)+'</span>';
         try{el.scrollTop=0;}catch(e){}
       };
+      const colAcc={},colRendered={};
+      /* 渲染节流：微增量洪泛（或超长回复）下避免每片全量重渲染的 O(n²) 卡死；
+         小于阈值时每片都渲染（短回复即时），超过后每累积 MD_RENDER_STEP 字符渲染一次，流末强制刷新 */
+      const MD_RENDER_STEP=1500;
+      const flushCol=(m)=>{
+        const el=aiColBody(m);if(!el)return;
+        const acc=colAcc[m];if(acc===undefined)return;
+        if((colRendered[m]||0)!==acc.length){el.innerHTML=mdRender(acc);colRendered[m]=acc.length;}
+      };
       const appendCol=(m,d)=>{
         const el=aiColBody(m);if(!el)return;
         /* 首次出正文：清掉「推局中…/重试中…」占位（textContent 一并清，兼容不重解析 innerHTML 的极简 DOM） */
         if(phase[m]!=='stream'){el.innerHTML='';el.textContent='';phase[m]='stream';}
-        el.textContent+=d;
+        colAcc[m]=(colAcc[m]||'')+d;
+        el.textContent=colAcc[m];            /* 原文：极简 DOM / 测试断言 / 复制用 */
+        const acc=colAcc[m];
+        if(acc.length<MD_RENDER_STEP||acc.length-(colRendered[m]||0)>=MD_RENDER_STEP){
+          el.innerHTML=mdRender(acc);        /* 渲染：真实浏览器显示（流式安全，未闭合标记按原文） */
+          colRendered[m]=acc.length;
+        }
         /* 贴近底部时自动跟随；用户手动上滚查看时不动 */
         try{if(el.scrollHeight-el.scrollTop-el.clientHeight<48)el.scrollTop=el.scrollHeight;}catch(e){}
       };
@@ -703,12 +778,14 @@ async function aiRun(){
             }
           });
           aiStates[m]={history:prev.concat([{role:'user',content:pan},{role:'assistant',content:reply}])};
+          flushCol(m);
           okN++;
         }catch(e){
           lastErr=(e&&e.message)?e.message:String(e);
           phase[m]='stream';
+          flushCol(m);   /* 先刷新已收到的部分正文，再叠失败信息 */
           const el=aiColBody(m);
-          if(el)el.innerHTML='<span style="color:#A32D2D">失败：'+esc(lastErr)+'</span>';
+          if(el)el.innerHTML+='<span style="color:#A32D2D">失败：'+esc(lastErr)+'</span>';
         }
       }));
       /* F6：用户主动停止优先于成败统计，避免「全部失败：The operation was aborted.」覆盖「已停止」 */
@@ -720,12 +797,13 @@ async function aiRun(){
       /* 前端直连：单列，沿用上一轮历史 */
       aiRenderCols(['front']);
       const out=aiColBody('front');
-      let acc='';
+      let acc='',renderedLen=0;
       aiStatus('连接中…（前端直连）');
-      const reply=await QMI.interpretStream(cfg,pan,aiHist,d=>{acc+=d;if(out)out.textContent=acc;},(url,init)=>{
+      const reply=await QMI.interpretStream(cfg,pan,aiHist,d=>{acc+=d;if(out){out.textContent=acc;if(acc.length<1500||acc.length-renderedLen>=1500){out.innerHTML=mdRender(acc);renderedLen=acc.length;}}},(url,init)=>{
         if(aiCtrl)init=Object.assign({},init,{signal:aiCtrl.signal});
         return fetch(url,init);
       });
+      if(out){out.textContent=acc;out.innerHTML=mdRender(acc);renderedLen=acc.length;}   /* 流末强制刷新 */
       aiHist.push({role:'user',content:pan},{role:'assistant',content:reply});
       aiStatus('完成 · 继续提问将沿用本盘（模型侧受「追问沿用原盘」约束）');
     }
