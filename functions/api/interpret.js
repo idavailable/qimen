@@ -22,6 +22,52 @@ function recordReading(env, ctx, row) {
   if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(p);
 }
 
+/* ---------- 上游建连（单次尝试；失败一律归 null，不抛） ---------- */
+function connectUpstream(prov, model, messages) {
+  return fetch(prov.base + '/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + prov.key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: model, messages: messages, stream: true })
+  }).catch(() => null);
+}
+
+/* ---------- 六轮：Gemini 单独策略 ----------
+   高峰期 Gemini 通道易 503（网关过载），单独给一套策略：
+     首次失败 → 等 10 秒重试，共 2 次；2 次之后仍不通 → 回落到别的已配供应商模型作答。
+   回落与重试过程用 SSE status / fallback 事件实时回报，前端逐列可见，不让用户干等。
+   其它供应商维持「一次即返」的原速失败语义，不引入额外延迟。
+   重试间隔可用 QM_RETRY_WAIT_MS 覆盖（默认 10000，测试置 0）。 */
+const RETRY_TIMES = 2;
+const RETRY_WAIT_MS = 10000;
+const RETRY_STATUS = { 408: 1, 425: 1, 429: 1, 500: 1, 502: 1, 503: 1, 504: 1 };
+function retriable(resp) { return !resp || !!RETRY_STATUS[resp.status]; }
+/* 是否「Gemini 一家」：内置 gemini 供应商，或模型名以 gemini 开头（走自定义中转的 Gemini 也算） */
+function isGeminiProv(prov) {
+  if (!prov) return false;
+  return prov.from === 'gemini' || /^gemini/i.test(String(prov.model || ''));
+}
+/* 只有 Gemini + 可重试错误才进重试流程；其余供应商维持一次即返 */
+function shouldRetry(prov, resp) { return isGeminiProv(prov) && retriable(resp); }
+function retryWaitMs(env) {
+  const n = parseInt((env && env.QM_RETRY_WAIT_MS), 10);
+  return Number.isFinite(n) && n >= 0 ? n : RETRY_WAIT_MS;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function provLabel(prov) { return (prov && (prov.label || prov.model || prov.from)) || '上游'; }
+function failText(resp) { return resp ? ('HTTP ' + resp.status) : '连接失败'; }
+
+/* 剥完 HTML 标签的上游错误详情（五轮修：不把整页 markup 透传给前端） */
+async function upstreamDetail(resp) {
+  try {
+    return String(await resp.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+  } catch (e) { return ''; }
+}
+async function upstreamErrorResponse(resp) {
+  if (!resp) return L.errMsg('上游连接失败', 502);
+  const detail = await upstreamDetail(resp);
+  return L.errMsg('上游 HTTP ' + resp.status + (detail ? ' ' + detail : ''), resp.status === 401 ? 401 : 502);
+}
+
 async function handle(request, env, ctx) {
   if (request.method === 'OPTIONS') return L.options();
 
@@ -52,54 +98,79 @@ async function handle(request, env, ctx) {
   if (question) messages.push({ role: 'user', content: question });
 
   const t0 = Date.now();
-  const upstream = await fetch(prov.base + '/chat/completions', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + prov.key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: prov.model, messages, stream: true })
-  }).catch(e => null);
-
-  if (!upstream) return L.errMsg('上游连接失败', 502);
-  if (!upstream.ok) {
-    let detail = '';
-    try {
-      /* 五轮（浏览器实测）：上游错误体常为 HTML 错误页——剥标签压空白，避免整页markup透传给前端 */
-      detail = String(await upstream.text()).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
-    } catch (e) { }
-    return L.errMsg('上游 HTTP ' + upstream.status + (detail ? ' ' + detail : ''), upstream.status === 401 ? 401 : 502);
-  }
-
-  const ct = String(upstream.headers.get('content-type') || '').toLowerCase();
   const ipHash = await L.hashIP(ip);
 
-  /* ---- 非流式兜底：一次性回传 ---- */
-  if (ct.indexOf('text/event-stream') < 0) {
-    let text = '';
-    try {
-      const d = await upstream.json();
-      const c = d.choices && d.choices[0];
-      text = (c && c.message && c.message.content) || '';
-    } catch (e) { }
-    if (!text) return L.errMsg('上游返回为空', 502);
-    const stream = new ReadableStream({
-      start(ctrl) {
-        ctrl.enqueue(L.sseDelta(text));
-        ctrl.enqueue(L.SSE_DONE);
-        ctrl.close();
-      }
-    });
-    recordReading(env, ctx, {
-      created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
-      pan, question, answer: text.slice(0, 4000), model: prov.model, ipHash, ms: Date.now() - t0
-    });
-    return new Response(stream, { status: 200, headers: L.sseHeaders() });
-  }
+  /* 首次建连：成功、或「不需要重试的失败」都在此定型——
+     后者（401/400/403、非 Gemini 的 503、连接失败…）仍以原 HTTP 状态码直返，
+     不引入任何等待，既有契约与响应速度不变。 */
+  let up = await connectUpstream(prov, prov.model, messages);
+  let usedProv = prov;
+  if (!(up && up.ok) && !shouldRetry(prov, up)) return upstreamErrorResponse(up);
 
-  /* ---- 流式转发 ---- */
-  const reader = upstream.body.getReader();
   const dec = new TextDecoder();
-  let buf = '', full = '', cut = null;
+  let reader = null, buf = '', full = '', cut = null, connected = false;
+  const usedModel = () => usedProv.model || prov.model;
+
   const stream = new ReadableStream({
     async pull(ctrl) {
+      /* ① 建连阶段：首次即可重试失败 → 重试 2 次（间隔 10s）→ 仍不通回落别家 */
+      if (!(up && up.ok)) {
+        const notice = s => { try { ctrl.enqueue(L.sseEvent(s)); } catch (e) { } };
+        for (let i = 1; i <= RETRY_TIMES; i++) {
+          notice({ status: provLabel(prov) + ' 通道繁忙（' + failText(up) + '），' + Math.round(retryWaitMs(env) / 1000) + ' 秒后重试（' + i + '/' + RETRY_TIMES + '）' });
+          await sleep(retryWaitMs(env));
+          up = await connectUpstream(prov, prov.model, messages);
+          if (up && up.ok) break;
+          if (!retriable(up)) break; /* 变成硬错误（如 401）就不再耗时间 */
+        }
+        if (!(up && up.ok)) {
+          const fb = L.fallbackProvider(env, prov);
+          if (fb) {
+            notice({ status: provLabel(prov) + ' 连续不可用，回落到 ' + provLabel(fb) + ' 作答…' });
+            const r2 = await connectUpstream(fb, fb.model, messages);
+            if (r2 && r2.ok) { up = r2; usedProv = fb; notice({ fallback: provLabel(fb) }); }
+            else if (r2) up = r2;
+          }
+        }
+        if (!(up && up.ok)) {
+          notice({ error: '上游 ' + failText(up) + '：' + provLabel(prov) + ' 重试 ' + RETRY_TIMES + ' 次仍不可用' + (L.fallbackProvider(env, prov) ? '，回落模型也未成功' : '（无可用回落模型）') });
+          try { ctrl.enqueue(L.SSE_DONE); } catch (e) { }
+          ctrl.close();
+          return;
+        }
+      }
+
+      /* ② 内容类型分流：非流式兜底一次性回传，流式则取 reader 逐片转发 */
+      if (!connected) {
+        connected = true;
+        const ct = String(up.headers.get('content-type') || '').toLowerCase();
+        if (ct.indexOf('text/event-stream') < 0) {
+          let text = '';
+          try {
+            const d = await up.json();
+            const c = d.choices && d.choices[0];
+            text = (c && c.message && c.message.content) || '';
+          } catch (e) { }
+          text = L.stripThinking(text);
+          if (!text) {
+            ctrl.enqueue(L.sseEvent({ error: '上游返回为空' }));
+            ctrl.enqueue(L.SSE_DONE);
+            ctrl.close();
+            return;
+          }
+          ctrl.enqueue(L.sseDelta(text));
+          ctrl.enqueue(L.SSE_DONE);
+          ctrl.close();
+          recordReading(env, ctx, {
+            created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
+            pan, question, answer: text.slice(0, 4000), model: usedModel(), ipHash, ms: Date.now() - t0
+          });
+          return;
+        }
+        reader = up.body.getReader();
+      }
+
+      /* ③ 流式转发（原语义不变：有增量就回一片并让出，触发下一次 pull） */
       while (true) {
         let r;
         try { r = await reader.read(); } catch (e) { cut = cut || 'UPSTREAM_ERROR'; break; }
@@ -119,12 +190,12 @@ async function handle(request, env, ctx) {
         try { await reader.cancel(); } catch (e) { }
         recordReading(env, ctx, {
           created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
-          pan, question, answer: full.slice(0, 4000), model: prov.model, ipHash, ms: Date.now() - t0
+          pan, question, answer: L.stripThinking(full).slice(0, 4000), model: usedModel(), ipHash, ms: Date.now() - t0
         });
         return;
       }
     },
-    cancel() { try { reader.cancel(); } catch (e) { } }
+    cancel() { if (reader) { try { reader.cancel(); } catch (e) { } } }
   });
   return new Response(stream, { status: 200, headers: L.sseHeaders() });
 }
@@ -133,3 +204,4 @@ async function handle(request, env, ctx) {
 export async function onRequestPost(ctx) { return handle(ctx.request, ctx.env, ctx); }
 export async function onRequestOptions() { return L.options(); }
 export { handle };
+export { retriable, shouldRetry, isGeminiProv, RETRY_TIMES, RETRY_WAIT_MS };

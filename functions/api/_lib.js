@@ -58,12 +58,27 @@ function parseSSEChunk(buf, full) {
       const j = JSON.parse(data);
       const c = j.choices && j.choices[0];
       const d = c && c.delta;
-      if (d && d.content) full += d.content;
-      else if (c && c.message && c.message.content) full += c.message.content;
+      /* 六轮：只取最终答复字段。reasoning_content / reasoning / thinking 是模型的思考链，
+         显式丢弃——不得混进解读正文（正文里若带  thinking 标签，再由 stripThinking 兜底剔除）。 */
+      if (d && typeof d.content === 'string' && d.content) full += d.content;
+      else if (c && c.message && typeof c.message.content === 'string' && c.message.content) full += c.message.content;
     } catch (e) { /* 忽略无法解析的分片 */ }
   }
   if (full.length > SSE_MAX_REPLY) cut = 'REPLY_OVERFLOW';
   return { buf, full, cut };
+}
+
+/* ---------- 思考链剥离（六轮） ----------
+   上游把思考过程直接写进 content 的（` thinking…<｜end▁of▁thinking｜>` 等）在此剔干净；
+   流式进行中标签可能尚未闭合——此时从起始标签到末尾一并丢弃，宁可晚出内容也不漏思考。 */
+const THINK_TAG = /<(think|thinking|reasoning|analysis)>/i;
+function stripThinking(text) {
+  if (!text) return '';
+  let s = String(text);
+  s = s.replace(/<(?:think|thinking|reasoning|analysis)>[\s\S]*?<\/(?:think|thinking|reasoning|analysis)>/gi, '');
+  const open = s.match(/<(?:think|thinking|reasoning|analysis)>[\s\S]*$/i);
+  if (open) s = s.slice(0, open.index);
+  return s;
 }
 
 /* ---------- 入参校验 ---------- */
@@ -206,7 +221,34 @@ function resolveProvider(env, body) {
   return null;
 }
 
-/* ---------- D1 留痕（失败不影响主流程） ---------- */
+/* ---------- 回落供应商（六轮：Gemini 通道高峰期持续 503 时改投别家） ----------
+   次序：DeepSeek → 自定义 provider → 通用 QM_*；且不与当前供应商同源（免得回落回自己）。
+   回落必须换本家的模型名（同 F3 口径），否则把 gemini-* 发给 deepseek 必然上游 400。 */
+function fallbackProvider(env, current) {
+  env = env || {};
+  const from = (current && current.from) || '';
+  if (from !== 'deepseek' && env.DEEPSEEK_API_KEY) {
+    return {
+      base: norm(env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1'),
+      model: env.DEEPSEEK_MODEL || 'deepseek-flash',
+      key: env.DEEPSEEK_API_KEY, from: 'deepseek', label: 'DeepSeek'
+    };
+  }
+  for (const p of customProviders(env)) {
+    const k = customKeyEnv(p.id);
+    if (p.id !== from && env[k]) {
+      return { base: norm(p.base), model: p.models[0], key: env[k], from: p.id, label: p.label || p.id };
+    }
+  }
+  if (from !== 'server' && env.QM_API_KEY) {
+    return {
+      base: norm(env.QM_BASE_URL || 'https://api.deepseek.com/v1'),
+      model: env.QM_MODEL || 'deepseek-chat',
+      key: env.QM_API_KEY, from: 'server', label: '通用兜底'
+    };
+  }
+  return null;
+}
 async function saveReading(env, row) {
   try {
     if (!env || !env.QM_DB) return;
@@ -235,6 +277,7 @@ export { sseDelta };
 export { sseEvent };
 export { SSE_DONE };
 export { parseSSEChunk };
+export { stripThinking };
 export { cleanHistory };
 export { errMsg };
 export { clientIP };
@@ -247,4 +290,5 @@ export { customProviders };
 export { customKeyEnv };
 export { customProviderWarnings };
 export { resolveProvider };
+export { fallbackProvider };
 export { byokBaseOk };

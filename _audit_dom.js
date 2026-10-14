@@ -3,7 +3,8 @@ const fs=require('fs'),path=require('path');
 const {JSDOM}=require('C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules/jsdom');
 const PB=path.join(__dirname,'public');
 const html=fs.readFileSync(path.join(PB,'index.html'),'utf8');
-const inline=html.match(/<script>\n([\s\S]*?)<\/script>\s*<\/body>/)[1];
+/* 第六轮：正则改为换行无关（\r?\n）——Windows 检出为 CRLF，旧的写死 \n 会直接匹配失败 */
+const inline=html.match(/<script>\r?\n([\s\S]*?)<\/script>\s*<\/body>/)[1];
 
 let pass=0,fail=0;
 const ck=(n,a,e)=>{const ok=String(a)===String(e);ok?pass++:fail++;console.log((ok?'  ✅ ':'  ❌ ')+n+(ok?'':'  实际='+JSON.stringify(a)+' 期望='+JSON.stringify(e)));};
@@ -94,6 +95,19 @@ await w.aiRun();
 const cols=w.__fetches.filter(f=>String(f.url).indexOf('/api/interpret')>=0).map(f=>f.body.model);
 console.log('    两列实际请求的 model =',JSON.stringify(cols));
 ck('★chip 选择应生效（不应被 aiModel 覆盖）',cols.every(m=>m==='old-manual'),false);
+
+console.log('\n=== 第六轮 · 对比列等高 + 内部滚动（真实 DOM + CSS 级联） ===');
+{
+  const wrap=w.document.createElement('div');wrap.className='ai-cols';
+  const c1=w.document.createElement('div');c1.className='ai-col-body';
+  const c2=w.document.createElement('div');c2.className='ai-col-body';
+  c2.textContent='很长的一段解读正文'.repeat(50);
+  wrap.appendChild(c1);wrap.appendChild(c2);w.document.body.appendChild(wrap);
+  const s1=w.getComputedStyle(c1),s2=w.getComputedStyle(c2);
+  console.log('    两列 height =',s1.height,'/',s2.height,'  overflow-y =',s1.overflowY);
+  ck('★两边高度一致（固定高度，不随内容长短变化）',s1.height===s2.height&&s1.height==='440px',true);
+  ck('★超出内容走列内滚动条',s1.overflowY==='auto',true);
+}
 
 console.log('\n'+'='.repeat(52));
 console.log('jsdom 复核：通过 '+pass+' / 失败 '+fail);

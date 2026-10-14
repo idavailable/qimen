@@ -79,8 +79,10 @@ function buildMessages(panText,history){
 }
 
 /* ---------- SSE 行解析（纯函数可测；对齐 liuyao readSSE 语义）
-   输入 {buf,full}，输出 {buf,full,cut}；守卫①无换行溢出、守卫②正文溢出 ---------- */
-function parseSSEChunk(buf,full){
+   输入 {buf,full}，输出 {buf,full,cut}；守卫①无换行溢出、守卫②正文溢出
+   第六轮：ev 可选——服务端会插播 {status}/{warn}/{error}/{fallback} 事件（Gemini 重试与
+   回落进度、截断告警），这些不是正文，收进 ev 由调用方展示，绝不拼进 full。 ---------- */
+function parseSSEChunk(buf,full,ev){
   if(buf.length>SSE_MAX_LINE)return{buf,full,cut:'LINE_OVERFLOW'};
   let cut=null;
   let idx;
@@ -92,14 +94,34 @@ function parseSSEChunk(buf,full){
     if(!data||data==='[DONE]')continue;
     try{
       const j=JSON.parse(data);
+      if(ev){
+        if(j&&j.status){ev.push({kind:'status',text:String(j.status)});continue;}
+        if(j&&j.fallback){ev.push({kind:'fallback',text:String(j.fallback)});continue;}
+        if(j&&j.warn){ev.push({kind:'warn',text:String(j.warn)});continue;}
+        if(j&&j.error){ev.push({kind:'error',text:String(j.error)});continue;}
+      }
       const c=j.choices&&j.choices[0];
       const d=c&&c.delta;
-      if(d&&d.content)full+=d.content;
-      else if(c&&c.message&&c.message.content)full+=c.message.content;
+      /* 只取最终答复字段：reasoning_content / reasoning / thinking 是模型思考链，丢弃不入正文 */
+      if(d&&typeof d.content==='string'&&d.content)full+=d.content;
+      else if(c&&c.message&&typeof c.message.content==='string'&&c.message.content)full+=c.message.content;
     }catch(e){/* 忽略无法解析的分片 */}
   }
   if(full.length>SSE_MAX_REPLY)cut='REPLY_OVERFLOW';
   return{buf,full,cut};
+}
+
+/* ---------- 思考链剥离（第六轮） ----------
+   有的上游把思考过程直接写进 content（` thinking…` 标签形式）。
+   成对标签整段剔除；流式进行中标签尚未闭合时，从起始标签到末尾一并丢弃——
+   宁可晚一点出字，也不让思考内容漏进正文。 */
+function stripThinking(text){
+  if(!text)return '';
+  let s=String(text);
+  s=s.replace(/<(?:think|thinking|reasoning|analysis)>[\s\S]*?<\/(?:think|thinking|reasoning|analysis)>/gi,'');
+  const open=s.match(/<(?:think|thinking|reasoning|analysis)>[\s\S]*$/i);
+  if(open)s=s.slice(0,open.index);
+  return s;
 }
 
 /* ---------- 配置存取（localStorage，浏览器侧） ---------- */
@@ -153,32 +175,34 @@ async function interpretStream(cfg,panText,history,onDelta,fetchImpl){
     /* 非流式兜底（中转站忽略 stream 参数回 JSON） */
     const data=await resp.json();
     const c=data.choices&&data.choices[0];
-    const text=(c&&c.message&&c.message.content)||'';
+    const text=stripThinking((c&&c.message&&c.message.content)||'');
     if(!text)throw new Error('EMPTY');
     if(onDelta)onDelta(text);
     return text;
   }
   const reader=resp.body.getReader();
   const dec=new TextDecoder();
-  let buf='',full='',cut=null;
+  let buf='',full='',vis='',cut=null;
   while(true){
     const r=await reader.read();
     if(r.done)break;
     buf+=dec.decode(r.value,{stream:true});
-    const before=full;
     const st=parseSSEChunk(buf,full);
     buf=st.buf;full=st.full;
     if(st.cut){cut=st.cut;break;}
-    if(onDelta&&full.length>before.length)onDelta(full.slice(before.length));
+    /* 只把「剥掉思考链之后」的可见文本增量喂给界面：思考段落不显示，也不进追问历史 */
+    const nv=stripThinking(full);
+    if(onDelta&&nv.length>vis.length)onDelta(nv.slice(vis.length));
+    vis=nv;
   }
   if(cut){try{await reader.cancel();}catch(e){/* 上游已断开则忽略 */}}
   /* 断流（守卫触发）时保留已收部分（可为空串）；仅正常读完仍无内容才抛 EMPTY */
   if(!full&&!cut)throw new Error('EMPTY');
-  return full.slice(0,SSE_MAX_REPLY);
+  return stripThinking(full).slice(0,SSE_MAX_REPLY);
 }
 
 return{
-  SYSTEM_PROMPT,buildPanText,buildMessages,parseSSEChunk,
+  SYSTEM_PROMPT,buildPanText,buildMessages,parseSSEChunk,stripThinking,
   loadCfg,saveCfg,makeRequest,interpretStream,
   LIMITS,SSE_MAX_LINE,SSE_MAX_REPLY,CFG_KEY
 };

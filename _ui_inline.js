@@ -1,4 +1,3 @@
-
 /* ============================================================
    界面层：engine.js（QM）提供全部算法，此处只做输入与渲染
    ============================================================ */
@@ -25,7 +24,8 @@ function cast(){
   const ds=document.getElementById('iDate').value;
   const ts=document.getElementById('iTime').value;
   if(!ds||!ts){alert('请填写日期与时间');return;}
-  const lon=parseFloat(document.getElementById('iLon').value)||120;
+  const lonV=parseFloat(document.getElementById('iLon').value);
+  const lon=isNaN(lonV)?120:lonV; /* F14：经度 0（格林尼治）属合法输入，不能被 ||120 吞掉 */
   const clock=document.getElementById('iClock').value;
   const ziSwap=document.getElementById('iZi').value==='23';
   const jg=parseInt(document.getElementById('iJi').value);
@@ -34,6 +34,26 @@ function cast(){
   const R=QM.cast(Y,M,D,h0,m0,{lon,clock,ziSwap,jg});
   curR=R;
   render(R,R.meta);
+  /* 可见反馈：同输入再起局时盘面逐字相同（页面加载时也已自动起过一局），
+     没有任何提示会让人误以为「点了没反应」。这里每次都回一条摘要。 */
+  castMsg('已起局 · '+castSummary(R));
+}
+function castSummary(R){
+  const m=R.meta||{};
+  const p2=n=>String(n).padStart(2,'0');
+  let s=`${m.ly}-${p2(m.lm)}-${p2(m.ld)} ${p2(m.lh)}:${p2(m.lmi)}（${{std:'北京时间',local:'地方平太阳时',true:'真太阳时'}[m.clock]||''}）`;
+  s+=` · ${R.dun===1?'阳遁':'阴遁'}${R.ju}局 · ${m.term}${m.yuanName||''}`;
+  try{
+    const py=YS.pillars(R);
+    if(py&&py.yearGZ&&py.yearGZ!=='?')s+=` · ${py.yearGZ}年 ${py.monthGZ}月 ${py.dayGZ}日 ${py.hourGZ}时`;
+  }catch(e){}
+  return s;
+}
+function castMsg(t){
+  const el=document.getElementById('castMsg');
+  if(!el)return;
+  el.style.display=t?'block':'none';
+  el.textContent=t||'';
 }
 
 /* ---------- 存档 / 读档 ---------- */
@@ -49,7 +69,8 @@ function saveParams(){
 function loadParams(p){
   document.getElementById('iDate').value=p.date||'';
   document.getElementById('iTime').value=p.time||'';
-  document.getElementById('iLon').value=p.lon||120;
+  const lon = (p.lon === undefined || p.lon === null || p.lon === '') ? 120 : Number(p.lon);
+  document.getElementById('iLon').value = (Number.isNaN(lon) ? 120 : lon);
   document.getElementById('iClock').value=p.clock||'true';
   document.getElementById('iZi').value=p.zi||'23';
   document.getElementById('iJi').value=p.ji||'2';
@@ -109,7 +130,9 @@ async function renderSaves(){
   /* 云端与本地按四柱+日期时间去重（同一局可能存过两边） */
   const seen=new Set(),rows=[];
   cloud.concat(local).forEach(s=>{
-    const k=(s.params&&s.params.date+' '+s.params.time+' '+s.params.lon+' '+s.params.ji)||s.id;
+    /* F26：params 缺失/字段不全时不能拼出 "undefined undefined …" 这种假键（会把不同存档并成一条） */
+    const p=s.params||{};
+    const k=(p.date||p.time)?(p.date+' '+p.time+' '+p.lon+' '+p.ji):s.id;
     if(seen.has(k))return;seen.add(k);rows.push(s);
   });
   if(!rows.length){el.innerHTML='<div style="font-size:12px;color:var(--muted)">暂无存档 —— 起局后点「存档」即可保存</div>';return;}
@@ -165,6 +188,7 @@ const relBadge=rel=>{
   return `<span class="chip ${cls}" style="margin:0">${rel}</span>`;
 };
 function renderYongshen(R){
+  if(R===undefined)R=curR; /* 缺省对当前盘重绘（控制台/测试直调友好） */
   if(!R||!R.meta||R.meta.test)return; // 校验用局无日时干支，用神区不可用
   const catId=document.getElementById('yCat')?document.getElementById('yCat').value:'qiucai';
   const t=YS.take(R,catId);
@@ -208,7 +232,7 @@ function render(R,m){
     <table>
       <tr><th>当前节气</th><td><b>${m.term}</b> · 交于 ${fmtJD(m.termJD)}</td></tr>
       <tr><th>下一节气</th><td>${m.nextTerm} · ${fmtJD(m.nextJD)}</td></tr>
-      <tr><th>年干支</th><td><b>${R.nian.gan}${R.nian.zhi}</b> 年（${m.ly}）· 年马星 <b>${R.ma.year.zhi}</b>（${PAL[R.ma.year.pal].gua}${R.ma.year.pal}宫）</td></tr>
+      <tr><th>年干支</th><td><b>${R.nian.gan}${R.nian.zhi}</b> 年（干支年 ${m.gzYear||m.ly}，以立春为界）· 年马星 <b>${R.ma.year.zhi}</b>（${PAL[R.ma.year.pal].gua}${R.ma.year.pal}宫）</td></tr>
       <tr><th>旬空（空亡）</th><td>时${R.xunName}旬空 <b>${R.kong.hour.zhi.join('、')}</b> 落 ${[...new Set(R.kong.hour.pal)].map(p=>PAL[p].gua+p+'宫').join('、')}；日${gz(R.meta.dayIdx-(R.meta.dayIdx%10)).slice(0,2)}旬空 <b>${R.kong.day.zhi.join('、')}</b></td></tr>
       <tr><th>符头（拆补）</th><td>${m.fuTou} 日${m.fuTouBack>0?`（${m.fuTouBack} 日前）`:''} → <b>${m.yuanName}</b></td></tr>
       <tr><th>定局</th><td>${dunBadge} &nbsp; ${m.term}${m.yuanName}＝${R.ju}局</td></tr>
@@ -330,23 +354,33 @@ function render(R,m){
       值符加时干转盘 · 值使按时序洛书飞宫 · 八门随值使转宫 · 八神阳顺阴逆 · 天禽随芮、中宫干寄宫并显 · 旬空（空亡宫）· 日/年驿马 · 日干·时干落宫<br>
       <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
       <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示<br>
-      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 248 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / M4 流式 / Functions 服务端）全部通过<br><br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 383 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端 / **Gemini 重试与回落**）全部通过<br><br>
       <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
       两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
-      非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级<br>
+      非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·
+      <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次，仍不通自动回落到其它已配模型作答，重试与回落进度在该列实时显示 ·
+      多模型列<b>等高并各自出滚动条</b>、输出时自动跟随底部 · 模型思考链（reasoning / <code>&lt;think&gt;</code>）一律不入正文、不进追问历史<br>
       <b>待实现（M1 余项）</b>：置闰法（超神接气，即《烟波钓叟歌》"超神接气为准的"）· 飞盘派排法 · 年命入局（年干支已备表单、未参与盘局）—— 置闰法涉及流派争议，待《兵法奇门》第二部「用局研究」落地
     </div>
   </div>`;
+  /* F1：innerHTML 整段重写会销毁 #yCat（回默认首项），先记下当前问事类别，写完回填 */
+  const prevCat=document.getElementById('yCat')?document.getElementById('yCat').value:null;
   document.getElementById('out').innerHTML=html;
+  if(prevCat){
+    const yc=document.getElementById('yCat');
+    /* 沙箱等极简 DOM 无 querySelector 时直接回填；浏览器下校验选项存在防脏值 */
+    if(yc&&(typeof yc.querySelector!=='function'||yc.querySelector('option[value="'+prevCat+'"]')))yc.value=prevCat;
+  }
   if(curR&&curR.meta&&!curR.meta.test)renderYongshen(curR);
-  /* 换盘即作废上一盘的多轮追问历史（服务端模式按模型分别记录） */
+  /* 换盘即作废上一盘的多轮追问历史（服务端按模型分别记录，前端直连共用 aiHist） */
+  aiHist=[]; /* F4：此前漏清，本地双击模式下旧盘会随追问入模 */
   aiStates={};
 }
 
 /* ---------- M4 AI 流式解读（界面层） ---------- */
-let aiHist=[],aiCtrl=null,aiStates={};
-/* esc：模型 id/label/pv 来自后台变量，一律转义后入 DOM */
-const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let aiHist=[],aiCtrl=null,aiStates={},aiAborted=false; /* F6：停止标志位（abort 后 aiCtrl 即失效，须独立记录） */
+/* F18：esc 与 escHtml 本为同一份转义，统一引用避免两份并存 */
+const esc=escHtml;
 
 /* ---- 模型芯片（对齐 liuyao：后台 /api/models 驱动，可多选横向对比） ---- */
 const QM_MODELS_KEY='qm_models';
@@ -430,11 +464,12 @@ function midSafe(m){
   return m.replace(/[^a-zA-Z0-9]/g,'')+h.toString(36);
 }
 function aiColBody(id){return document.getElementById('col-'+midSafe(id));}
+function aiColHead(id){return document.getElementById('head-'+midSafe(id));}
 function aiRenderCols(list){
   const out=document.getElementById('aiOut');
   out.innerHTML='<div class="ai-cols">'+list.map(m=>{
     const cfg=MODELS.filter(x=>x.id===m)[0]||{label:m,pv:''};
-    return '<div class="ai-col"><div class="ai-col-head">'+esc(cfg.label||m)+
+    return '<div class="ai-col"><div class="ai-col-head" id="head-'+midSafe(m)+'">'+esc(cfg.label||m)+
       '<span class="pv-tag">'+esc(cfg.pv||'')+'</span></div>'+
       '<div class="ai-col-body" id="col-'+midSafe(m)+'"></div></div>';
   }).join('')+'</div>';
@@ -445,6 +480,8 @@ function aiSyncMode(){
   const mr=document.getElementById('modelRow'),br=document.getElementById('byokRow');
   if(mr)mr.style.display=(m==='server')?'':'none';
   if(br)br.style.display=(m==='server')?'none':'';
+  /* F13：切到服务端模式时重拉模型清单（此前只在 init 拉一次，后台新增供应商不刷新） */
+  if(m==='server')loadModels();
 }
 const aiCfg=()=>({
   mode:(document.getElementById('aiMode')?document.getElementById('aiMode').value:'auto'),
@@ -501,19 +538,22 @@ function aiPillars(){
     return py?[py.year,py.month,py.day,py.hour].join(' '):'';
   }catch(e){return '';}
 }
-/* 服务端代理模式：POST /api/interpret，SSE 增量回传，用 QMI.parseSSEChunk 解析 */
-async function aiServerStream(pan,model,history,onDelta){
-  const c=aiCfg();
+/* 服务端代理模式：POST /api/interpret，SSE 增量回传，用 QMI.parseSSEChunk 解析
+   第六轮：服务端会插播 status（Gemini 重试/回落进度）、fallback、warn（截断）、error；
+   正文一律先经 QMI.stripThinking 剥掉思考链——思考内容不进正文，也不进追问历史。
+   onEvent(kind,text) 用于把「等待/重试/回落」这类过程信息渲染到该列。 */
+async function aiServerStream(pan,model,history,onDelta,onEvent){
+  /* F7：服务端代理模式下 byok 输入行已隐藏，残留的手填 base/model/key 不得覆盖芯片选择。
+     中转站请由后台 CUSTOM_PROVIDERS 配置（自动出现在芯片上），前端不再随请求带上。 */
   const body={pan:pan,cat:aiCat(),pillars:aiPillars(),question:aiQuestion().slice(0,500),
               history:(Array.isArray(history)?history:[]).slice(-8),model:model||''};
-  if(c.base&&c.model&&c.key){body.base=c.base;body.model=c.model;body.key=c.key;}
   const init={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)};
   if(aiCtrl)init.signal=aiCtrl.signal;
   const resp=await fetch('/api/interpret',init);
   if(!resp.ok){
     let d='';try{d=String(await resp.text()).slice(0,300);}catch(e){}
     let msg='HTTP_'+resp.status;
-    try{const j=JSON.parse(d);if(j&&j.error)msg=String(j.error);}catch(e){if(d)msg+=' '+d;}
+    try{const j=JSON.parse(d);if(j&&j.error)msg=String(j.error);}catch(e){if(d)msg+=' '+d.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim().slice(0,160);}
     const err=new Error(msg);err.status=resp.status;throw err;
   }
   const ct=String(resp.headers&&resp.headers.get?resp.headers.get('content-type'):'').toLowerCase();
@@ -522,20 +562,31 @@ async function aiServerStream(pan,model,history,onDelta){
     throw new Error((j&&j.error)||'服务端未返回流式响应');
   }
   const reader=resp.body.getReader();const dec=new TextDecoder();
-  let buf='',full='',cut=null;
+  let buf='',raw='',vis='',cut=null,errEvt='',warnEvt='';
+  const evts=[];
   while(true){
     const r=await reader.read();
     if(r.done)break;
     buf+=dec.decode(r.value,{stream:true});
-    const before=full;
-    const st=QMI.parseSSEChunk(buf,full);
-    buf=st.buf;full=st.full;
+    evts.length=0;
+    const st=QMI.parseSSEChunk(buf,raw,evts);
+    buf=st.buf;raw=st.full;
+    for(const e of evts){
+      if(e.kind==='error')errEvt=e.text;
+      else if(e.kind==='warn')warnEvt=e.text;
+      else if(onEvent)onEvent(e.kind,e.text);
+    }
     if(st.cut){cut=st.cut;break;}
-    if(onDelta&&full.length>before.length)onDelta(full.slice(before.length));
+    const nv=QMI.stripThinking(raw);
+    if(nv.length>vis.length){if(onDelta)onDelta(nv.slice(vis.length));vis=nv;}
   }
   if(cut){try{await reader.cancel();}catch(e){}}
-  if(!full&&!cut)throw new Error('EMPTY');
-  return full;
+  /* 服务端明确报错（如 Gemini 重试耗尽且回落也失败）：整列按失败处理，不留半截正文 */
+  if(errEvt)throw new Error(errEvt);
+  vis=QMI.stripThinking(raw);
+  if(onDelta&&(warnEvt||cut))onDelta('\n\n〔回复过长已截断'+(cut?('（'+cut+'）'):'')+'，可追问「继续」〕');
+  if(!vis&&!cut)throw new Error('EMPTY');
+  return vis;
 }
 async function aiRun(){
   const mode=aiMode();
@@ -546,6 +597,7 @@ async function aiRun(){
   }
   QMI.saveCfg(cfg);
   aiCtrl=(typeof AbortController==='function')?new AbortController():null;
+  aiAborted=false; /* F6：新一轮开始前复位停止标志 */
   try{
     if(mode==='server'){
       /* 服务端代理：按选中的模型并行解读，每个模型一列（对齐 liuyao 多模型对比） */
@@ -553,25 +605,49 @@ async function aiRun(){
       if(!list.length){aiStatus('请至少选择一个模型',true);return;}
       /* 不在这里重置 aiStates：多轮追问需沿用上一轮历史（重置只在换盘/清空对话时） */
       aiRenderCols(list);
-      list.forEach(m=>{const el=aiColBody(m);if(el)el.innerHTML='<span class="loading">推局中…</span>';});
+      /* 每列状态：loading = 等待/重试中（只显示过程提示）；stream = 已开始出正文（提示不再覆盖正文） */
+      const phase={};
+      const setNote=(m,t)=>{
+        if(phase[m]==='stream')return;
+        const el=aiColBody(m);if(!el)return;
+        el.innerHTML='<span class="loading">'+esc(t)+'</span>';
+        try{el.scrollTop=0;}catch(e){}
+      };
+      const appendCol=(m,d)=>{
+        const el=aiColBody(m);if(!el)return;
+        /* 首次出正文：清掉「推局中…/重试中…」占位（textContent 一并清，兼容不重解析 innerHTML 的极简 DOM） */
+        if(phase[m]!=='stream'){el.innerHTML='';el.textContent='';phase[m]='stream';}
+        el.textContent+=d;
+        /* 贴近底部时自动跟随；用户手动上滚查看时不动 */
+        try{if(el.scrollHeight-el.scrollTop-el.clientHeight<48)el.scrollTop=el.scrollHeight;}catch(e){}
+      };
+      list.forEach(m=>{phase[m]='loading';setNote(m,'推局中…');});
       aiStatus('连接中…（服务端代理 · '+list.length+' 个模型）');
       let okN=0,lastErr='';
       await Promise.all(list.map(async m=>{
         const prev=(aiStates[m]&&aiStates[m].history)?aiStates[m].history:[];
         try{
-          const reply=await aiServerStream(pan,m,prev,d=>{
-            const el=aiColBody(m);
-            if(el){if(el.textContent==='推局中…')el.textContent='';el.textContent+=d;}
+          const reply=await aiServerStream(pan,m,prev,d=>appendCol(m,d),(kind,text)=>{
+            /* status：Gemini 通道繁忙→10 秒后重试（1/2）→ 回落 XX 作答…，逐列实时可见 */
+            if(kind==='status')setNote(m,text);
+            else if(kind==='fallback'){
+              const head=aiColHead(m);
+              if(head)head.innerHTML+='<span class="fb-tag">→ 由 '+esc(text)+' 回落作答</span>';
+              if(phase[m]!=='stream')setNote(m,'由 '+text+' 回落作答…');
+            }
           });
           aiStates[m]={history:prev.concat([{role:'user',content:pan},{role:'assistant',content:reply}])};
           okN++;
         }catch(e){
           lastErr=(e&&e.message)?e.message:String(e);
+          phase[m]='stream';
           const el=aiColBody(m);
           if(el)el.innerHTML='<span style="color:#A32D2D">失败：'+esc(lastErr)+'</span>';
         }
       }));
-      if(okN===list.length)aiStatus('完成 · 继续提问将沿用本盘（模型侧受「追问沿用原盘」约束）');
+      /* F6：用户主动停止优先于成败统计，避免「全部失败：The operation was aborted.」覆盖「已停止」 */
+      if(aiAborted)aiStatus('已停止',true);
+      else if(okN===list.length)aiStatus('完成 · 继续提问将沿用本盘（模型侧受「追问沿用原盘」约束）');
       else if(okN>0)aiStatus('完成 '+okN+'/'+list.length+'（部分模型失败：'+lastErr+'）',true);
       else aiStatus('全部失败：'+lastErr+' —— 若提示未配置密钥，请到 Pages 后台设置对应 secret',true);
     }else{
@@ -589,14 +665,16 @@ async function aiRun(){
     }
   }catch(e){
     const msg=e&&e.message?e.message:String(e);
-    if(aiCtrl&&aiCtrl.signal&&aiCtrl.signal.aborted)aiStatus('已停止',true);
+    /* F6：先看独立标志位（aiStop 不再把 aiCtrl 置 null，但标志位最可靠） */
+    if(aiAborted||(aiCtrl&&aiCtrl.signal&&aiCtrl.signal.aborted))aiStatus('已停止',true);
     else if(msg.indexOf('Failed to fetch')>=0||msg.indexOf('NetworkError')>=0||msg.indexOf('CORS')>=0)
       aiStatus('解读失败：'+msg+' —— 多为 CORS 跨域（该接口不允许浏览器直调），可换支持跨域的接口或点「复制盘面提示词」',true);
     else aiStatus('解读失败：'+msg,true);
   }finally{aiCtrl=null;}
 }
 function aiStop(){
-  if(aiCtrl){aiCtrl.abort();aiCtrl=null;aiStatus('已停止',true);}
+  /* F6：先立标志再 abort，且不再把 aiCtrl 置 null（否则收尾判定全部落空） */
+  if(aiCtrl){aiAborted=true;aiCtrl.abort();aiStatus('已停止',true);}
   else aiStatus('当前没有进行中的请求',true);
 }
 function aiCopyFallback(txt){
@@ -609,7 +687,8 @@ function aiCopyFallback(txt){
   document.body.removeChild(ta);
 }
 function aiCopyPan(){
-  const pan=aiPan(); if(!pan)return Promise.resolve(null);
+  /* F12：复制给外部对话用，问事随盘面显式附带且仅附一次（与服务端请求体互不叠加） */
+  const pan=aiPan(true); if(!pan)return Promise.resolve(null);
   const txt=QMI.SYSTEM_PROMPT+'\n\n────────\n\n'+pan;
   if(navigator.clipboard&&navigator.clipboard.writeText){
     return navigator.clipboard.writeText(txt).then(
@@ -625,7 +704,6 @@ function aiCopyPan(){
   for(let i=0;i<60;i++){const o=document.createElement('option');o.value=i;o.textContent=gz(i);sel.appendChild(o);}
   aiLoadCfg();
   renderModelChips();
-  aiSyncMode();
-  if(aiMode()==='server')loadModels(); /* 本地双击打开时不拉，避免无谓告警 */
+  aiSyncMode(); /* 内部已在 server 模式时 loadModels（F13），本地双击 file:// 不拉清单 */
   setNow();
 })();

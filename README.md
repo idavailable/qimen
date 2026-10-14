@@ -25,9 +25,9 @@ functions/api/          ← Pages Functions（不进静态产物）
   records.js            D1 解读记录：列表 / 详情 / 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（352 项）
-sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（93 项）
-_audit_dom.js           jsdom 真实 DOM 复核（8 项：换局类别/停止文案/换盘历史/芯片覆盖）
+test.js                 回归测试（383 项）
+sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（105 项）
+_audit_dom.js           jsdom 真实 DOM 复核（10 项：换局类别/停止文案/换盘历史/芯片覆盖/对比列等高滚动）
 schema.sql              D1 建表
 wrangler.toml           Pages 配置（含 D1 绑定）
 ```
@@ -72,6 +72,7 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `CUSTOM_PROVIDERS` | 文本变量 | JSON 数组，后台加供应商无需改代码：`[{"id":"kimi","label":"Moonshot","base":"https://api.moonshot.cn/v1","models":["kimi-k2"]}]`，密钥为 `<ID大写>_API_KEY` |
 | `QM_API_KEY` / `QM_BASE_URL` / `QM_MODEL` | secret / 变量 | 通用兜底（未走上面几家时使用） |
 | `RATE_LIMIT_PER_MIN` | 文本变量 | 每 IP 每分钟上限；**不设 = 不限流** |
+| `QM_RETRY_WAIT_MS` | 文本变量 | Gemini 重试间隔毫秒数；默认 `10000`（10 秒）。调小仅用于测试 |
 | `ACCESS_CODE` | secret | 管理口令：`/api/records`、`/api/saves` 的全量查询（`?all=1`）、越权删除、清空校验；未设则一律禁止 |
 
 模型清单由 `GET /api/models` 动态返回（按密钥是否配置标注可用性），前端渲染成**可多选的模型芯片**，
@@ -94,9 +95,9 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test          # 352 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由）
-npm run ui:verify # 93 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组）
-node _audit_dom.js # 8 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
+npm test          # 383 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试回落）
+npm run ui:verify # 105 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/回落/思考链 K 组）
+node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
 ```
 
 ## 2026-10-10 全量审计修复（P1×6 + P2×7 + P3 若干，依据《审计报告-2026-10-10.md》）
@@ -120,6 +121,15 @@ node _audit_dom.js # 8 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTM
 二轮另记若干 P3 观察（未改代码）：客户端主动断开时服务端不写留痕；`/api/models` 前端未消费 `defaultModel`；云端存档列表上限 50 条。详见二轮报告。
 
 已知遗留（P3，暂不修）：限流为单 isolate 内计数（F19，根治需 KV/D1 计数器）。
+
+## 2026-10-14 第六轮（高峰期 Gemini 通道策略 + 对比列体验 + 思考链）
+
+| 项 | 做法 |
+|---|---|
+| **Gemini 单独重试策略** | 高峰期 Gemini 网关易 503。首次建连失败（503/429/5xx/连接失败）后，**每 10 秒重试一次、共 2 次**；2 次仍不通则**回落到其它已配供应商模型**（DeepSeek → 自定义 provider → `QM_*`，且不与当前同源），并把本家模型名一并换掉（沿用 F3 口径）。重试与回落进度以 SSE `status` / `fallback` 事件**在该列实时显示**，用户不必干等。前缀响应仍是 200 流，`error` 事件收尾时报明「重试 2 次仍不可用」。**其它供应商一次即返、不引入任何等待**；Gemini 401 等硬错误同样不重试 |
+| 对比列等高 | `.ai-col-body` 由 `min-height + flex:1` 改为**固定高度 440px**（小屏 `min(440px,62vh)`）+ `overflow-y:auto`——两列始终等高，内容长出即各自出滚动条；输出时贴近底部自动跟随，用户上滚查看则不动 |
+| 思考链不入正文 | ① 服务端/前端 SSE 解析**显式丢弃** `reasoning_content` / `reasoning` / `thinking` 字段；② `stripThinking()` 兜底剔除写在 `content` 里的 ` thinking…` 标签（流式中未闭合则从起始标签到末尾一并丢弃）；③ D1 留痕与非流式兜底同样剥离；④ 提示词加一条「不得输出思考过程、推理草稿、自我提问」 |
+| 工程 | `_ui_inline.js`（沙箱用内联脚本副本）**与 `index.html` 全量同步**（此前漂移出 F4/F6/F7/F12/F14/F18/F26 多处旧代码，沙箱实际在测旧版）；`_audit_dom.js` 的提取正则改为换行无关（Windows CRLF 检出下旧正则直接匹配失败） |
 
 ## 路线图
 

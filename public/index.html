@@ -68,20 +68,24 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
 .mchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .mchip .pv{font-size:11px;opacity:.75;margin-right:4px}
 .mchip.off{opacity:.5;text-decoration:line-through}
-/* 多模型对比分栏 */
+/* 多模型对比分栏：各列等宽等高（固定高度 + 内部滚动，两边高度始终一致） */
 .ai-cols{display:flex;gap:14px;flex-wrap:wrap;align-items:stretch;margin-top:10px}
 .ai-col{flex:1;min-width:300px;display:flex;flex-direction:column;gap:6px}
 .ai-col-head{font-size:13px;font-weight:600;color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:5px}
 .ai-col-head .pv-tag{font-size:11px;font-weight:400;color:var(--muted);margin-left:6px}
-.ai-col-body{white-space:pre-wrap;border:1px solid var(--line);border-radius:8px;padding:12px;min-height:84px;background:#fdfdfc;font-size:13px;line-height:1.75;flex:1}
+.ai-col-head .fb-tag{font-size:11px;font-weight:400;color:var(--amber,#B8860B);margin-left:6px}
+.ai-col-body{white-space:pre-wrap;border:1px solid var(--line);border-radius:8px;padding:12px;background:#fdfdfc;
+  font-size:13px;line-height:1.75;height:440px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.ai-col-body .loading{color:var(--amber);font-size:13px}
 .loading{color:var(--amber);font-size:13px}
-@media(max-width:640px){.grid{gap:4px}.pal{min-height:104px;padding:5px}.pal .sky{font-size:16px}.ai-cols{flex-direction:column}}
+@media(max-width:640px){.grid{gap:4px}.pal{min-height:104px;padding:5px}.pal .sky{font-size:16px}
+  .ai-cols{flex-direction:column}.ai-col-body{height:min(440px,62vh)}}
 </style>
 </head>
 <body>
 
 <h1>奇门遁甲决策工具</h1>
-<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 352 项全过 + 浏览器沙箱全流程 93 项全过</div>
+<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘排盘 · 拆补法定局 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 383 项全过 + 浏览器沙箱全流程 105 项全过</div>
 
 <div class="card">
   <h2>一、输入</h2>
@@ -543,10 +547,12 @@ function render(R,m){
       值符加时干转盘 · 值使按时序洛书飞宫 · 八门随值使转宫 · 八神阳顺阴逆 · 天禽随芮、中宫干寄宫并显 · 旬空（空亡宫）· 日/年驿马 · 日干·时干落宫<br>
       <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
       <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示<br>
-      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 352 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端）全部通过<br><br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 383 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **立春真实时刻为界的干支年** / 节气基准解耦 / M4 流式 / Functions 服务端 / **Gemini 重试与回落**）全部通过<br><br>
       <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
       两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
-      非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级<br>
+      非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·
+      <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次，仍不通自动回落到其它已配模型作答，重试与回落进度在该列实时显示 ·
+      多模型列<b>等高并各自出滚动条</b>、输出时自动跟随底部 · 模型思考链（reasoning / <code>&lt;think&gt;</code>）一律不入正文、不进追问历史<br>
       <b>待实现（M1 余项）</b>：置闰法（超神接气，即《烟波钓叟歌》"超神接气为准的"）· 飞盘派排法 · 年命入局（年干支已备表单、未参与盘局）—— 置闰法涉及流派争议，待《兵法奇门》第二部「用局研究」落地
     </div>
   </div>`;
@@ -651,11 +657,12 @@ function midSafe(m){
   return m.replace(/[^a-zA-Z0-9]/g,'')+h.toString(36);
 }
 function aiColBody(id){return document.getElementById('col-'+midSafe(id));}
+function aiColHead(id){return document.getElementById('head-'+midSafe(id));}
 function aiRenderCols(list){
   const out=document.getElementById('aiOut');
   out.innerHTML='<div class="ai-cols">'+list.map(m=>{
     const cfg=MODELS.filter(x=>x.id===m)[0]||{label:m,pv:''};
-    return '<div class="ai-col"><div class="ai-col-head">'+esc(cfg.label||m)+
+    return '<div class="ai-col"><div class="ai-col-head" id="head-'+midSafe(m)+'">'+esc(cfg.label||m)+
       '<span class="pv-tag">'+esc(cfg.pv||'')+'</span></div>'+
       '<div class="ai-col-body" id="col-'+midSafe(m)+'"></div></div>';
   }).join('')+'</div>';
@@ -724,8 +731,11 @@ function aiPillars(){
     return py?[py.year,py.month,py.day,py.hour].join(' '):'';
   }catch(e){return '';}
 }
-/* 服务端代理模式：POST /api/interpret，SSE 增量回传，用 QMI.parseSSEChunk 解析 */
-async function aiServerStream(pan,model,history,onDelta){
+/* 服务端代理模式：POST /api/interpret，SSE 增量回传，用 QMI.parseSSEChunk 解析
+   第六轮：服务端会插播 status（Gemini 重试/回落进度）、fallback、warn（截断）、error；
+   正文一律先经 QMI.stripThinking 剥掉思考链——思考内容不进正文，也不进追问历史。
+   onEvent(kind,text) 用于把「等待/重试/回落」这类过程信息渲染到该列。 */
+async function aiServerStream(pan,model,history,onDelta,onEvent){
   /* F7：服务端代理模式下 byok 输入行已隐藏，残留的手填 base/model/key 不得覆盖芯片选择。
      中转站请由后台 CUSTOM_PROVIDERS 配置（自动出现在芯片上），前端不再随请求带上。 */
   const body={pan:pan,cat:aiCat(),pillars:aiPillars(),question:aiQuestion().slice(0,500),
@@ -745,22 +755,31 @@ async function aiServerStream(pan,model,history,onDelta){
     throw new Error((j&&j.error)||'服务端未返回流式响应');
   }
   const reader=resp.body.getReader();const dec=new TextDecoder();
-  let buf='',full='',cut=null;
+  let buf='',raw='',vis='',cut=null,errEvt='',warnEvt='';
+  const evts=[];
   while(true){
     const r=await reader.read();
     if(r.done)break;
     buf+=dec.decode(r.value,{stream:true});
-    const before=full;
-    const st=QMI.parseSSEChunk(buf,full);
-    buf=st.buf;full=st.full;
+    evts.length=0;
+    const st=QMI.parseSSEChunk(buf,raw,evts);
+    buf=st.buf;raw=st.full;
+    for(const e of evts){
+      if(e.kind==='error')errEvt=e.text;
+      else if(e.kind==='warn')warnEvt=e.text;
+      else if(onEvent)onEvent(e.kind,e.text);
+    }
     if(st.cut){cut=st.cut;break;}
-    if(onDelta&&full.length>before.length)onDelta(full.slice(before.length));
+    const nv=QMI.stripThinking(raw);
+    if(nv.length>vis.length){if(onDelta)onDelta(nv.slice(vis.length));vis=nv;}
   }
-  if(cut){try{await reader.cancel();}catch(e){}
-    /* 四轮审计：服务端 warn 事件被 parseSSEChunk 丢弃，截断须在此自行补一条可见提示 */
-    if(onDelta)onDelta('\n\n〔回复过长已截断（'+cut+'），可追问「继续」〕');}
-  if(!full&&!cut)throw new Error('EMPTY');
-  return full;
+  if(cut){try{await reader.cancel();}catch(e){}}
+  /* 服务端明确报错（如 Gemini 重试耗尽且回落也失败）：整列按失败处理，不留半截正文 */
+  if(errEvt)throw new Error(errEvt);
+  vis=QMI.stripThinking(raw);
+  if(onDelta&&(warnEvt||cut))onDelta('\n\n〔回复过长已截断'+(cut?('（'+cut+'）'):'')+'，可追问「继续」〕');
+  if(!vis&&!cut)throw new Error('EMPTY');
+  return vis;
 }
 async function aiRun(){
   const mode=aiMode();
@@ -779,20 +798,42 @@ async function aiRun(){
       if(!list.length){aiStatus('请至少选择一个模型',true);return;}
       /* 不在这里重置 aiStates：多轮追问需沿用上一轮历史（重置只在换盘/清空对话时） */
       aiRenderCols(list);
-      list.forEach(m=>{const el=aiColBody(m);if(el)el.innerHTML='<span class="loading">推局中…</span>';});
+      /* 每列状态：loading = 等待/重试中（只显示过程提示）；stream = 已开始出正文（提示不再覆盖正文） */
+      const phase={};
+      const setNote=(m,t)=>{
+        if(phase[m]==='stream')return;
+        const el=aiColBody(m);if(!el)return;
+        el.innerHTML='<span class="loading">'+esc(t)+'</span>';
+        try{el.scrollTop=0;}catch(e){}
+      };
+      const appendCol=(m,d)=>{
+        const el=aiColBody(m);if(!el)return;
+        /* 首次出正文：清掉「推局中…/重试中…」占位（textContent 一并清，兼容不重解析 innerHTML 的极简 DOM） */
+        if(phase[m]!=='stream'){el.innerHTML='';el.textContent='';phase[m]='stream';}
+        el.textContent+=d;
+        /* 贴近底部时自动跟随；用户手动上滚查看时不动 */
+        try{if(el.scrollHeight-el.scrollTop-el.clientHeight<48)el.scrollTop=el.scrollHeight;}catch(e){}
+      };
+      list.forEach(m=>{phase[m]='loading';setNote(m,'推局中…');});
       aiStatus('连接中…（服务端代理 · '+list.length+' 个模型）');
       let okN=0,lastErr='';
       await Promise.all(list.map(async m=>{
         const prev=(aiStates[m]&&aiStates[m].history)?aiStates[m].history:[];
         try{
-          const reply=await aiServerStream(pan,m,prev,d=>{
-            const el=aiColBody(m);
-            if(el){if(el.textContent==='推局中…')el.textContent='';el.textContent+=d;}
+          const reply=await aiServerStream(pan,m,prev,d=>appendCol(m,d),(kind,text)=>{
+            /* status：Gemini 通道繁忙→10 秒后重试（1/2）→ 回落 XX 作答…，逐列实时可见 */
+            if(kind==='status')setNote(m,text);
+            else if(kind==='fallback'){
+              const head=aiColHead(m);
+              if(head)head.innerHTML+='<span class="fb-tag">→ 由 '+esc(text)+' 回落作答</span>';
+              if(phase[m]!=='stream')setNote(m,'由 '+text+' 回落作答…');
+            }
           });
           aiStates[m]={history:prev.concat([{role:'user',content:pan},{role:'assistant',content:reply}])};
           okN++;
         }catch(e){
           lastErr=(e&&e.message)?e.message:String(e);
+          phase[m]='stream';
           const el=aiColBody(m);
           if(el)el.innerHTML='<span style="color:#A32D2D">失败：'+esc(lastErr)+'</span>';
         }

@@ -65,7 +65,9 @@ ck('H20 第二轮沿用原盘（历史已由 H18 校验，此处校验输出仍�
 aiCtrl=new AbortController();
 aiStop();
 ck('H21 停止状态提示',g('aiStatus').textContent.includes('已停止'),'实际='+g('aiStatus').textContent);
-ck('H22 停止后 aiCtrl 已释放',aiCtrl===null,'实际='+String(aiCtrl));
+/* F6 口径：aiStop 只立标志位 + abort，不再把 aiCtrl 置 null（置 null 会让收尾判定全部落空） */
+ck('H22 停止后独立标志位生效且请求已 abort',aiAborted===true&&!!aiCtrl&&aiCtrl.signal.aborted===true,
+   '实际 aiAborted='+String(aiAborted)+' aborted='+String(aiCtrl&&aiCtrl.signal&&aiCtrl.signal.aborted));
 
 /* H23 清空对话 */
 aiClearHist();
@@ -116,12 +118,13 @@ ck('I6 完成后状态提示',g('aiStatus').textContent.includes('完成'),'实�
 ck('I7 历史按模型分别入栈（各 2 条）',Object.keys(aiStates).every(m=>aiStates[m].history.length===2),'实际='+JSON.stringify(Object.keys(aiStates).map(m=>aiStates[m].history.length)));
 ck('I8 四柱随请求上报',typeof f1.body.pillars==='string'&&f1.body.pillars.length>0,'实际='+f1.body.pillars);
 
-/* I9 BYOK：填了密钥时随请求带上 */
+/* I9 F7 口径：服务端模式下 byok 输入行已隐藏，残留的手填值不得覆盖芯片选择（请求体不带 base/key） */
 g('aiBase').value='https://api.example.com/v1';g('aiModel').value='m';g('aiKey').value='k';
 __fetches.length=0;
 await aiRun();
 const f2=__fetches[__fetches.length-1];
-ck('I9 BYOK 时带 base/model/key',f2.body.base==='https://api.example.com/v1'&&f2.body.model==='m'&&f2.body.key==='k','实际='+JSON.stringify([f2.body.base,f2.body.model,f2.body.key]));
+ck('I9 服务端模式残留 byok 不随请求发送（F7）',f2.body.base===undefined&&f2.body.key===undefined&&
+   f2.body.model==='deepseek-flash','实际='+JSON.stringify([f2.body.base,f2.body.model,f2.body.key]));
 ck('I10 第二轮带上一轮历史',__fetches.every(f=>Array.isArray(f.body.history)&&f.body.history.length===2),'实际='+JSON.stringify(__fetches.map(f=>f.body.history.length)));
 
 /* I11 auto 模式判定：线上 https → server；本地 file → front */
@@ -217,7 +220,7 @@ ck('J11 toggleSaves 开关',g('savesPanel').style.display==='block','实际='+g(
 g('iDate').value='';g('iTime').value='';g('iLon').value='0';
 const j12save=localSaves()[localSaves().length-1];
 await loadSave(j12save.id);
-ck('J12 读档恢复表单',g('iDate').value===j12save.params.date&&g('iLon').value==='120','实际='+g('iDate').value+' / '+g('iLon').value+'，期望 date='+j12save.params.date);
+ck('J12 读档恢复表单',g('iDate').value===j12save.params.date&&String(g('iLon').value)==='120','实际='+g('iDate').value+' / '+g('iLon').value+'，期望 date='+j12save.params.date);
 ck('J13 读档后盘面重排',g('out').innerHTML.includes('奇门遁甲')||g('out').innerHTML.length>100,'实际长度='+g('out').innerHTML.length);
 ck('J14 读档后面板收起',g('savesPanel').style.display==='none');
 
@@ -245,3 +248,97 @@ await renderSaves();
 ck('J18 空存档给出提示',g('savesList').innerHTML.includes('暂无存档'));
 fetch=jOldF2;
 try{localStorage.removeItem('qm_saves_v1');}catch(e){}
+/* · K 组：第六轮（Gemini 重试/回落可见化 + 思考链不入正文） ================= */
+console.log('\n=== K · 第六轮：重试/回落可见化与思考链剥离 ===');
+const enc2=new TextEncoder();
+const sseC2=o=>enc2.encode('data: '+JSON.stringify(o)+'\n\n');
+/* 自定义 SSE 流存根：chunks 依次下发；onBefore(i) 在取第 i 片之前回调（此时第 i-1 片已渲染完，可采 DOM 快照） */
+function mkStreamFetch(chunks,onBefore){
+  return function(url,init){
+    __fetches.push({url:url,init:init,body:JSON.parse(init.body)});
+    let i=0;
+    return Promise.resolve({ok:true,status:200,
+      headers:{get:h=>h==='content-type'?'text/event-stream':null},
+      body:{getReader:()=>({read:()=>{if(i>0&&onBefore)onBefore(i);
+        return i<chunks.length?Promise.resolve({done:false,value:chunks[i++]}):Promise.resolve({done:true});},
+        cancel:()=>Promise.resolve()})},
+      json:()=>Promise.resolve({}),text:()=>Promise.resolve('')});
+  };
+}
+
+/* K1–K4 纯函数：思考链剥离 */
+ck('K1 成对  thinking 整段剔除',QMI.stripThinking('A<thinking>内心戏</thinking>B')==='AB','实际='+QMI.stripThinking('A<thinking>内心戏</thinking>B'));
+ck('K2 未闭合标签（流式中）起至末尾一并丢弃',QMI.stripThinking('A<think>还没想完…')==='A','实际='+QMI.stripThinking('A<think>还没想完…'));
+ck('K3 无标签正文原样返回',QMI.stripThinking('一、盘面要点')==='一、盘面要点');
+ck('K4 reasoning 别名同样剔除',QMI.stripThinking('<reasoning>x</reasoning>C')==='C','实际='+QMI.stripThinking('<reasoning>x</reasoning>C'));
+/* K5 parseSSEChunk 第三参收事件、事件不进正文 */
+{
+  const ev=[];
+  const st=QMI.parseSSEChunk('data: '+JSON.stringify({status:'繁忙，10 秒后重试（1/2）'})+'\n\n'
+    +'data: '+JSON.stringify({choices:[{delta:{content:'正文'}}]})+'\n\n','',ev);
+  ck('K5 服务端事件收进 ev 且不混入正文',ev.length===1&&ev[0].kind==='status'&&st.full==='正文',
+     'ev='+JSON.stringify(ev)+' full='+JSON.stringify(st.full));
+}
+
+/* K6–K9 端到端：status 占位 → 回落标记 → 正文剔除思考 → 历史不含思考 */
+/* 沙箱 DOM 不重解析 innerHTML，aiRenderCols 不会重建 col-* 节点：断言前手动复位一次（真实浏览器由 innerHTML 重建） */
+const resetColK=()=>{const h=aiColHead('gemini-3.8-flash'),b=aiColBody('gemini-3.8-flash');
+  if(h)h.innerHTML='';if(b){b.innerHTML='';b.textContent='';}};
+setNow();                       /* 回到真实盘（校验局不能解读） */
+g('aiMode').value='server';
+selModels=['gemini-3.8-flash'];
+aiClearHist();
+resetColK();
+const oldFetchK=fetch;
+let snapAfterStatus='',snapAfterFallback='';
+fetch=mkStreamFetch([
+  sseC2({status:'Gemini 3.8 Flash 通道繁忙（HTTP 503），10 秒后重试（1/2）'}),
+  sseC2({status:'Gemini 3.8 Flash 通道繁忙（HTTP 503），10 秒后重试（2/2）'}),
+  sseC2({fallback:'DeepSeek'}),
+  sseC2({choices:[{delta:{content:'一、盘面要点'}}]}),
+  sseC2({choices:[{delta:{content:'<thinking>内心戏不入正文</thinking>：值符落宫。'}}]}),
+  enc2.encode('data: [DONE]\n\n')
+],i=>{
+  if(i===1)snapAfterStatus=aiColBody('gemini-3.8-flash').innerHTML;
+  if(i===3)snapAfterFallback=aiColBody('gemini-3.8-flash').innerHTML;
+});
+await aiRun();
+const kCol=aiColBody('gemini-3.8-flash');
+const kHead=aiColHead('gemini-3.8-flash');
+ck('K6 status 事件在列内先占位（loading）',snapAfterStatus.indexOf('重试（1/2）')>=0,'实际='+snapAfterStatus);
+ck('K7 fallback 事件在列头挂持久标记',kHead.innerHTML.indexOf('由 DeepSeek 回落作答')>=0,'实际='+kHead.innerHTML);
+ck('K8 回落提示在出正文前可见',snapAfterFallback.indexOf('回落作答')>=0,'实际='+snapAfterFallback);
+ck('K9 思考链既不入正文也不入历史',kCol.textContent==='一、盘面要点：值符落宫。'&&
+   aiStates['gemini-3.8-flash'].history[1].content==='一、盘面要点：值符落宫。',
+   '列='+JSON.stringify(kCol.textContent)+' 历史='+JSON.stringify(aiStates['gemini-3.8-flash'].history[1].content));
+ck('K9b 完成后状态提示',g('aiStatus').textContent.includes('完成'),'实际='+g('aiStatus').textContent);
+
+/* K10 服务端 error 事件：整列判失败，不留半截正文 */
+aiClearHist();
+resetColK();
+fetch=mkStreamFetch([
+  sseC2({status:'Gemini 通道繁忙（HTTP 503），10 秒后重试（1/2）'}),
+  sseC2({choices:[{delta:{content:'半截'}}]}),
+  sseC2({error:'上游 HTTP 503：Gemini 重试 2 次仍不可用，回落模型也未成功'}),
+  enc2.encode('data: [DONE]\n\n')
+]);
+await aiRun();
+ck('K10 error 事件整列判失败且标明原因',
+   aiColBody('gemini-3.8-flash').innerHTML.indexOf('失败：上游 HTTP 503')>=0&&
+   g('aiStatus').textContent.indexOf('全部失败')>=0,
+   '列='+aiColBody('gemini-3.8-flash').innerHTML+' 状态='+g('aiStatus').textContent);
+
+/* K11 截断提示只在收到 warn 时补一条（不再无条件补） */
+aiClearHist();
+resetColK();
+fetch=mkStreamFetch([
+  sseC2({choices:[{delta:{content:'正文一段'}}]}),
+  enc2.encode('data: [DONE]\n\n')
+]);
+await aiRun();
+ck('K11 正常收流不误报截断',aiColBody('gemini-3.8-flash').textContent==='正文一段',
+   '实际='+JSON.stringify(aiColBody('gemini-3.8-flash').textContent));
+
+fetch=oldFetchK;
+selModels=['gemini-3.8-flash','deepseek-flash'];
+g('aiMode').value='auto';

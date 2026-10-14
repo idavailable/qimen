@@ -920,8 +920,131 @@ ck('saveCfg Node环境=false',QMI.saveCfg({base:'x',key:'y',model:'z'}),false);
     ck('29.20 删除非本网络存档 → 404',r.status===404,true,String(r.status));
   }
 
+  /* ================= 三十、六轮：Gemini 重试 / 回落 / 思考链剥离 ================= */
+  console.log('\n=== 三十、六轮：Gemini 单独策略与思考链剥离 ===');
+
+  /* 脚本化上游：按次序返回预设响应（status≥400 视为错误），记录每次请求的 URL 与模型名 */
+  function scripted(script) {
+    const calls = [];
+    const f = async (url, init) => {
+      const b = JSON.parse(init.body);
+      calls.push({ url: url, model: b.model, stream: b.stream });
+      const step = script[Math.min(calls.length - 1, script.length - 1)] || {};
+      if (step.throwNet) throw new Error('network down');
+      if (step.status && step.status >= 400) return new Response(step.body || ('upstream ' + step.status), { status: step.status, headers: { 'Content-Type': 'text/plain' } });
+      const en = new TextEncoder();
+      const cs = [en.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: step.text || '答' } }] }) + '\n\n'), en.encode('data: [DONE]\n\n')];
+      return new Response(new ReadableStream({ start(c) { cs.forEach(x => c.enqueue(x)); c.close(); } }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    f.calls = calls;
+    return f;
+  }
+  /* 读全部原始 SSE 文本（要连 status/fallback 事件一起看）+ 解析出的正文 */
+  async function readAll(resp) {
+    const rd = resp.body.getReader(); const dec = new TextDecoder();
+    let raw = '', buf = '', full = '';
+    while (true) {
+      const r = await rd.read(); if (r.done) break;
+      const t = dec.decode(r.value, { stream: true });
+      raw += t; buf += t;
+      const s = L.parseSSEChunk(buf, full); buf = s.buf; full = s.full;
+    }
+    return { raw: raw, full: full };
+  }
+  const GEM = 'gemini-3.8-flash';
+  const envGem = () => ({ GEMINI_API_KEY: 'gk', DEEPSEEK_API_KEY: 'dk', QM_DB: fakeD1(), QM_RETRY_WAIT_MS: '0' });
+
+  ck('30.0 默认策略参数（重试 2 次 / 间隔 10 秒）', fi.RETRY_TIMES === 2 && fi.RETRY_WAIT_MS === 10000, true);
+
+  /* 30.1 Gemini 两次 503 后第三次成功 */
+  let up = scripted([{ status: 503 }, { status: 503 }, { text: '丙' }]);
+  globalThis.fetch = up;
+  let r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), envGem());
+  let a30 = await readAll(r30);
+  ck('30.1 Gemini 503 重试后成功（共 3 次请求）', up.calls.length, 3);
+  ck('30.2 重试进度以 status 事件回传（1/2、2/2）', (a30.raw.match(/"status"/g) || []).length, 2);
+  ck('30.3 三次请求都是 Gemini 模型', up.calls.every(c => c.model === GEM), true);
+  ck('30.4 最终正文完整回传', a30.full, '丙');
+
+  /* 30.5 Gemini 三连 503 → 回落 DeepSeek */
+  up = scripted([{ status: 503 }, { status: 503 }, { status: 503 }, { text: '丁' }]);
+  globalThis.fetch = up;
+  let db6 = fakeD1();
+  r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), { GEMINI_API_KEY: 'gk', DEEPSEEK_API_KEY: 'dk', QM_DB: db6, QM_RETRY_WAIT_MS: '0' });
+  a30 = await readAll(r30);
+  ck('30.5 三次重试耗尽后回落（共 4 次请求）', up.calls.length, 4);
+  ck('30.6 回落请求换成 DeepSeek 本家模型名', up.calls[3].model, 'deepseek-flash');
+  ck('30.7 回落事件通知前端', (a30.raw.match(/"fallback"/g) || []).length, 1);
+  ck('30.8 回落列文案含目标供应商', a30.raw.indexOf('DeepSeek') >= 0, true);
+  ck('30.9 回落成功仍有完整正文', a30.full, '丁');
+  ck('30.10 D1 留痕记实际作答模型', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[6]), 'deepseek-flash');
+
+  /* 30.11 无可用回落模型 → 明确报错，不抛异常 */
+  up = scripted([{ status: 503 }, { status: 503 }, { status: 503 }]);
+  globalThis.fetch = up;
+  r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), { GEMINI_API_KEY: 'gk', QM_DB: fakeD1(), QM_RETRY_WAIT_MS: '0' });
+  a30 = await readAll(r30);
+  ck('30.11 无回落模型 → error 事件（HTTP 仍 200 流）', r30.status === 200 && up.calls.length === 3 && a30.raw.indexOf('"error"') >= 0, true);
+  ck('30.12 报错文案点明重试次数', a30.raw.indexOf('重试 2 次仍不可用') >= 0, true);
+
+  /* 30.13 连接失败（fetch 抛错）也算可重试 */
+  up = scripted([{ throwNet: true }, { text: '戊' }]);
+  globalThis.fetch = up;
+  r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), envGem());
+  a30 = await readAll(r30);
+  ck('30.13 连接失败同样进入重试', up.calls.length === 2 && a30.full === '戊', true);
+
+  /* 30.14 Gemini 401（密钥错）不重试，原速 401 */
+  up = scripted([{ status: 401 }]);
+  globalThis.fetch = up;
+  r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), envGem());
+  ck('30.14 Gemini 401 不重试（硬错误一次即返）', r30.status === 401 && up.calls.length === 1, true);
+
+  /* 30.15 非 Gemini 供应商：503 也不重试（Gemini 单独策略不动别家） */
+  up = scripted([{ status: 503 }]);
+  globalThis.fetch = up;
+  r30 = await fi.handle(mkReq({ pan: panTxt, model: 'deepseek-flash' }), { DEEPSEEK_API_KEY: 'dk', GEMINI_API_KEY: 'gk', QM_DB: fakeD1(), QM_RETRY_WAIT_MS: '0' });
+  ck('30.15 非 Gemini 503 一次即返（不额外等待）', r30.status === 502 && up.calls.length === 1, true);
+  ck('30.16 非 Gemini 走 QM_* 兜底时同样不重试', fi.shouldRetry({ from: 'server', model: 'm1' }, { status: 503 }), false);
+
+  /* 30.17–30.19 思考链剥离 */
+  ck('30.17 服务端成对 think 整段剔除', L.stripThinking('A<thinking>内心戏</thinking>B'), 'AB');
+  ck('30.18 服务端未闭合 think 起至末尾丢弃', L.stripThinking('A<think>还没想完'), 'A');
+  ck('30.19 无标签正文不受影响', L.stripThinking('一、盘面要点'), '一、盘面要点');
+  up = scripted([{ text: 'A<thinking>内心戏</thinking>B' }]);
+  globalThis.fetch = up;
+  db6 = fakeD1();
+  r30 = await fi.handle(mkReq({ pan: panTxt }), { QM_API_KEY: 'k', QM_DB: db6 });
+  await readAll(r30);
+  ck('30.20 D1 留痕不含思考链', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[5]), 'AB');
+  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: 'X<think>内心</think>Y' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  db6 = fakeD1();
+  r30 = await fi.handle(mkReq({ pan: panTxt }), { QM_API_KEY: 'k', QM_DB: db6 });
+  a30 = await readAll(r30);
+  ck('30.21 非流式兜底同样剥思考链', a30.full, 'XY');
+  ck('30.22 非流式兜底 D1 同样不含思考链', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[5]), 'XY');
+
+  /* 30.23 回落供应商选择：不与当前同源 */
+  ck('30.23 回落不选自己（deepseek 失败时不回落 deepseek）', L.fallbackProvider({ DEEPSEEK_API_KEY: 'd' }, { from: 'deepseek' }) === null, true);
+  ck('30.24 无任何备选密钥时回落为 null', L.fallbackProvider({}, { from: 'gemini' }) === null, true);
+  ck('30.25 有 DeepSeek 时优先回落 DeepSeek', String((L.fallbackProvider({ DEEPSEEK_API_KEY: 'd', QM_API_KEY: 'q' }, { from: 'gemini' }) || {}).from), 'deepseek');
+
+  /* 30.26 前端：对比列等高 + 内部滚动（CSS 断言） */
+  {
+    const fsx = require('fs');
+    const html = fsx.readFileSync('./public/index.html', 'utf8');
+    const m = html.match(/\.ai-col-body\{[^}]*\}/);
+    ck('30.26 对比列固定高度（两边始终等高）', !!m && /height:\s*440px/.test(m[0]), true);
+    ck('30.27 对比列超出即出滚动条', !!m && /overflow-y:\s*auto/.test(m[0]), true);
+    ck('30.28 小屏同样等高可滚', /\.ai-col-body\{height:min\(440px/.test(html), true);
+    ck('30.29 前端与服务端提示词仍逐字一致', SRV_PROMPT === PUB_PROMPT, true);
+    ck('30.30 提示词禁止输出思考过程', SRV_PROMPT.indexOf('不得输出思考过程') >= 0, true);
+  }
+
+  globalThis.fetch = origFetch;
+
   // 验证完毕输出小计
-  console.log('\n=== 廿六 ~ 廿九节异步组执行完毕 ===');
+  console.log('\n=== 廿六 ~ 三十节异步组执行完毕 ===');
   final();
 })();
 
