@@ -1253,10 +1253,10 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   /* F3：回落到别家供应商时必须换用该家的模型名（旧版把 gemini 模型名发给 deepseek 必然 400） */
   pv=rp({DEEPSEEK_API_KEY:'d'},{model:'gemini-3.8-flash'});
   ck('28.24 回落 DeepSeek 模型名换本家',pv.from==='deepseek'&&pv.model==='deepseek-flash',true,JSON.stringify(pv));
-  pv=rp({GEMINI_API_KEY:'g'},{model:'deepseek-v4-pro'});
+  pv=rp({GEMINI_API_KEY:'g'},{model:'deepseek-v4'});
   ck('28.25 回落 Gemini 模型名换本家',pv.from==='gemini'&&pv.model==='gemini-3.8-flash',true,JSON.stringify(pv));
-  pv=rp({DEEPSEEK_API_KEY:'d',DEEPSEEK_MODEL:'deepseek-v4-pro'},{model:'gemini-3.8-flash'});
-  ck('28.26 回落尊重 DEEPSEEK_MODEL 覆盖',pv.model,'deepseek-v4-pro');
+  pv=rp({DEEPSEEK_API_KEY:'d',DEEPSEEK_MODEL:'deepseek-v4'},{model:'gemini-3.8-flash'});
+  ck('28.26 回落尊重 DEEPSEEK_MODEL 覆盖',pv.model,'deepseek-v4');
 
   /* F11：BYOK base SSRF 守卫（仅公网 http(s)，禁内网/回环/保留地址） */
   ck('28.27 BYOK 禁内网 IP',rp({},{base:'http://192.168.1.1/v1',model:'m',key:'k'}).invalid,'byok_base');
@@ -1272,8 +1272,8 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   ck('28.21 端到端：gemini 打到 Google 兼容端点',lastUp.url,'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
   ck('28.22 端到端：模型名原样透传',lastUp.body.model,'gemini-3.8-flash');
   globalThis.fetch=mockUpstream('sse');
-  await fi.handle(mkReq({pan:panTxt,model:'deepseek-v4-pro'}),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_DB:fakeD1()});
-  ck('28.23 端到端：deepseek-v4-pro 打到 DeepSeek',lastUp.url,'https://api.deepseek.com/v1/chat/completions');
+  await fi.handle(mkReq({pan:panTxt,model:'deepseek-v4'}),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_DB:fakeD1()});
+  ck('28.23 端到端：deepseek-* 打到 DeepSeek',lastUp.url,'https://api.deepseek.com/v1/chat/completions');
   globalThis.fetch=origFetch;
 
   /* ---- 廿九、/api/saves 存档接口 ---- */
@@ -1481,7 +1481,7 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   ck('30.28 BYOK 无同族清单 → null（不编造模型名）', L.fallbackProvider({}, { from: 'byok', model: 'gpt-4o' }) === null, true);
   ck('30.28b QM_GEMINI_MODELS 可覆盖递推顺序', L.familyModels({ QM_GEMINI_MODELS: 'gemini-x,gemini-y' }, 'gemini').join(','), 'gemini-x,gemini-y');
   ck('30.28c 环境默认模型排在递推链最前', L.familyModels({ GEMINI_MODEL: 'gemini-pro' }, 'gemini')[0], 'gemini-pro');
-  ck('30.28d 模型展示名（状态栏可读）', L.modelLabel('gemini-3.8-flash') + '/' + L.modelLabel('deepseek-v4-pro'), 'Gemini 3.8 Flash/DeepSeek V4 Pro');
+  ck('30.28d 模型展示名（状态栏可读）', L.modelLabel('gemini-3.8-flash') + '/' + L.modelLabel('deepseek-flash'), 'Gemini 3.8 Flash/DeepSeek Flash');
 
   /* 30.29–30.33 前端：对比列等高 + 内部滚动 + 提示词 */
   {

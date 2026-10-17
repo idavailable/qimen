@@ -727,14 +727,13 @@ const esc=escHtml;
 const QM_MODELS_KEY='qm_models';
 const MODEL_TIPS={
   'gemini-3.6-flash':'快','gemini-3.8-flash':'高峰期易过载',
-  'deepseek-flash':'快','deepseek-v4-pro':'深推理 · 慢'
+  'deepseek-flash':'V4.1 · 1017'
 };
 const DEFAULT_MODELS=['gemini-3.8-flash','deepseek-flash'];
 let MODELS=[
   {id:'gemini-3.6-flash',pv:'Google',label:'Gemini 3.6 Flash',tip:'快'},
   {id:'gemini-3.8-flash',pv:'Google',label:'Gemini 3.8 Flash',tip:'高峰期易过载'},
-  {id:'deepseek-flash',pv:'DeepSeek',label:'DeepSeek Flash',tip:'快'},
-  {id:'deepseek-v4-pro',pv:'DeepSeek',label:'DeepSeek V4 Pro',tip:'深推理 · 慢'}
+  {id:'deepseek-flash',pv:'DeepSeek',label:'DeepSeek V4.1 Flash',tip:'V4.1 · 1017'}
 ];
 function modelLabel(id){
   const p=String(id).split('-');
