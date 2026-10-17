@@ -52,6 +52,22 @@ self.addEventListener('fetch', (e) => {
   /* 规则 1：/api/ 永不缓存，也绝不拿缓存应答 */
   if (url.pathname.indexOf('/api/') === 0) return;
 
+  /* 规则 3（2026-10-17）：页面导航网络优先——cache-first 会让发版后的第一次
+     打开仍用旧 index.html（进而加载旧 app.js），模型清单等改动要等第二次才生效。
+     离线时回退缓存，排盘零网络的卖点不变。 */
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req).then((res) => {
+        if (res && res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put('./index.html', copy));
+        }
+        return res;
+      }).catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(req).then((hit) => {
       if (hit) {
