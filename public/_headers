@@ -1,0 +1,18 @@
+# 静态资源响应头（Cloudflare Pages）
+# 2026-10-17：页面壳与脚本改为每次回源校验，避免发版后老访客继续用旧 app.js
+#（此前 max-age=14400，模型芯片等改动最长 4 小时不生效）。
+
+/index.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
+
+/app.js
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
