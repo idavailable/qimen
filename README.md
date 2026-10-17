@@ -31,7 +31,7 @@ functions/api/          ← Pages Functions（不进静态产物）
   saves.js              D1 盘面存档：列表 / 全量（口令）/ 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（549 项）
+test.js                 回归测试（564 项）
 sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（128 项）
 _audit_dom.js           jsdom 真实 DOM 复核（10 项：换局类别/停止文案/换盘历史/芯片覆盖/对比列等高滚动）
 _smoke_p13.js           jsdom 渲染冒烟（42 项：六种流派组合逐一 cast + 中五宫规则 + 读档回放）
@@ -88,6 +88,8 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `CUSTOM_PROVIDERS` | 文本变量 | JSON 数组，后台加供应商无需改代码：`[{"id":"kimi","label":"Moonshot","base":"https://api.moonshot.cn/v1","models":["kimi-k2"]}]`，密钥为 `<ID大写>_API_KEY` |
 | `QM_API_KEY` / `QM_BASE_URL` / `QM_MODEL` | secret / 变量 | 通用兜底（未走上面几家时使用） |
 | `RATE_LIMIT_PER_MIN` | 文本变量 | 每 IP 每分钟上限；**不设 = 不限流** |
+| `QM_LLM_TIMEOUT_MS` | 文本变量 | 上游总超时（毫秒），默认 `120000`。覆盖「建连 + 读完整条流」，并随客户端断开立即 abort |
+| `QM_ALLOW_NULL_ORIGIN` | 文本变量 | 设 `1` 才放行 `Origin: null`。默认拒绝——`null` 同时也是 sandbox iframe 的 Origin，默认放行等于把 IP 隔离的记录暴露给任意页面 |
 | `QM_RETRY_WAIT_MS` | 文本变量 | Gemini 重试间隔毫秒数；默认 `10000`（10 秒）。调小仅用于测试 |
 | `QM_GEMINI_MODELS` / `QM_DEEPSEEK_MODELS` | 文本变量 | 覆盖同族**递推顺序**（逗号分隔，书写顺序即试的顺序）；不设则用内置清单 |
 | `GEMINI_MODEL` / `DEEPSEEK_MODEL` | 文本变量 | 该家默认模型；设在则自动排在递推链最前 |
@@ -113,7 +115,7 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test           # 549 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推 + P1-3 流派配置 90 项）
+npm test           # 564 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推 + P1-3 流派配置 90 项）
 npm run ui:verify  # 128 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
 node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
 node _smoke_p13.js # 42 项 P1-3 渲染冒烟（六种流派组合 + 中五宫规则 + 读档回放）
@@ -190,6 +192,25 @@ node _smoke_p23.js # 75 项 P2-3 冒烟（翻局回放含流派配置 + 复盘�
 
 审计中核对为**正确、未改动**的关键实现：拆补定局全链（符头→元→节气三元局表→阴阳遁）、地盘布干序＝九宫数序 1→9 含中五、值使门按九宫数序飞（中宫计一步、落 5 寄宫，与《同安康奇门起局歌》两实例逐字吻合）、转盘旋转、天禽寄宫、旬空、驿马、三奇得使/入墓/击刑、门迫门制、五不遇时、十干克应 81 格、三奇应克 24 项、`prompt.js` 两份逐字一致、`models.js` 密钥可用性判定。
 
+## 2026-10-17 第十轮审计修复（线上空响应 / CORS / SSRF）
+
+**事故**：`_lib.route(req, handle(...))` 把 async `handle()` 的 Promise 当 Response 用——`resp.headers` / `resp.body` 全为 `undefined`，构造出 `200 + 空体`。浏览器对**同源 POST 也发 Origin**，因此线上「服务端代理」的解读与存档全部拿到空响应（GET 因不带 Origin 而正常，掩盖了问题）。测试全部直调 `handle()`，绕过了这层包装，故此前未暴露。
+
+| 编号 | 级别 | 修复 | 落点 |
+|---|---|---|---|
+| P0-1 | 致命 | `route` 改 async 并 `await` 内部响应；五个出口补传 `env` | `_lib.js`、`interpret/models/records/saves.js` |
+| P1-1 | 安全 | `Origin: null` 默认拒绝，需 `QM_ALLOW_NULL_ORIGIN=1` 显式开启（sandbox iframe 可伪造 null，曾可跨站读/删本网络记录并烧密钥） | `_lib.js` |
+| P1-2 | 稳定 | 上游总超时 + 接 `request.signal`；客户端断开即 abort，重试前检查 aborted | `functions/api/interpret.js` |
+| P1-3 | 安全 | 上游错误体不再回传浏览器（只进 console），防中转站回显 Authorization | 同上 |
+| P2-1 | 安全 | 管理口令改走 `X-Access-Code` 头（`?code=` 保留兼容）；比较改常量时间 | `app.js`、`records.js`、`saves.js`、`_lib.js` |
+| P2-2 | 安全 | Markdown 链接 URL 补属性转义，堵 `[x](https://a/"onmouseover="…)` 的属性注入 | `public/app.js` |
+| P2-3 | 一致性 | 下架 `deepseek-v4-pro`（官方 2026-09-14 起重定向到 Flash） | `_lib.js` |
+| P2-4 | 正确性 | `buildPanText` 不再静默 `slice(0,4000)`（会砍掉用神/应期段）；超限由服务端明确报错 | `public/interpret.js` |
+| P2-5 | 安全 | BYOK SSRF 补强：拒 IPv6 字面量 / 十进制整数主机名 / rebinding 域名 / URL 内嵌账号；BYOK 走 `redirect:'manual'` | `_lib.js`、`interpret.js` |
+| P3-1 | 数据 | D1 留痕正文上限 4000 → 20000，长解读不再截成残篇 | `functions/api/interpret.js` |
+
+**验证**：`test.js` **564/0**（新增 31 节 15 项：带 Origin 的 onRequest 必须有响应体、null 默认拒绝/显式放行、records 不空体、v4-pro 下架、BYOK 五类地址、常量时间比较）· 沙箱 **128/0**（L 组改断言口令走头）· jsdom 复核 **10/0** · P1-3 **42/0** · P2-2 **23/0** · P2-3 **75/0**。
+
 ## 路线图
 
 - ✅ M1 起局引擎 · M2 格局库（十干克应 81 格等）· M3 用神取法 · M4 AI 流式解读（前端直连 + 服务端代理 + D1）
@@ -203,7 +224,7 @@ node _smoke_p23.js # 75 项 P2-3 冒烟（翻局回放含流派配置 + 复盘�
 | P1-3 流派配置 | 排盘派别（**转盘 / 飞盘**）× 定局法（**拆补 / 置闰 / 茅山**）× 天禽寄宫（**随天芮 / 阳艮阴坤**）三组下拉，选后立即生效并随存档/分享一起保存。飞盘派：九星/八门/九神按洛书数序飞布、八门跳过中五、中五宫有星有神无门且不寄宫；置闰法：符头块走查状态机（超神/接气/正授/置闰，锚点 1717-12-16 甲子，康熙五十七芒种置闰算例复现，锚点前日期自动回退拆补）；茅山法：交节日当天起算每 5 日一元、不看符头。`test.js` 新增第 32 节 90 项（飞盘算例四源一致逐宫比对、置闰全链、三法同日分歧、寄宫变体、`buildPanText` 四种口吻） |
 | P2-2 PWA 与分享 | `manifest.webmanifest` + `sw.js`（离线缓存；`/api/` 永不缓存、只拦同源 GET、非 GET 透传；导航离线回退首页）· 起局参数编成 `#p=` base64url 链接（TextEncoder 保中文），打开即还原并自动起局 · http(s) 才注册 SW，本地双击 `file://` 自动跳过 · 图标由 `tools/make_icons.py` 纯 Python 手写 PNG（洛书九宫，无 Pillow/字体依赖） |
 | P2-3 复盘与翻局 | 存档条目增加可选 `feedback`（事后回填）/ `verified`（应验/未应验/待验）字段，AI 列下方「七、案例复盘」写回本机存档（旧档无字段即空，透明兼容；换盘自动脱离防张冠李戴）· 存档同时快照**当时的 AI 解读**，读档连同盘面只读回看 · 云端存档可「转存本机」后回填 · 「◀ 上一局 / 下一局 ▶」在最近 50 局间翻动，**连同流派配置一起回放**（同参不重复压栈、中间起新局丢弃分支、校验用局不入栈） |
-| 测试 | `test.js` **549/549** · 沙箱 **128/128** · jsdom 复核 **10/10** · P1-3 冒烟 **42/42** · P2-2 冒烟 **23/23** · P2-3 冒烟 **75/75** |
+| 测试 | `test.js` **564/564** · 沙箱 **128/128** · jsdom 复核 **10/10** · P1-3 冒烟 **42/42** · P2-2 冒烟 **23/23** · P2-3 冒烟 **75/75** |
 | 冒烟抓到的真 bug | ① `restoreFromHash` IIFE 在模块求值期同步 `cast()`，`relBadge` 等后置 `const` 尚在 TDZ → ReferenceError（改为只还原参数、由 init() 末尾起局）；② `cloudToLocal()` 守卫条件写反（`curSaveId[0]!=='L'` 对云端档恒真直接 return） |
 
 ## 第十轮 · 改进路线落实（2026-10-14）

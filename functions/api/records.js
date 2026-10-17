@@ -13,8 +13,11 @@ import * as L from './_lib.js';
 const COLS_LIST = 'id, created_at, cat, pillars, question, model, ms';
 const COLS_FULL = 'id, created_at, cat, pillars, pan, question, answer, model, ms';
 
-function isAdmin(env, q) {
-  return !!(env && env.ACCESS_CODE && q.get('code') === env.ACCESS_CODE);
+/* 管理口令：优先 X-Access-Code 头（不进 URL/日志/浏览器历史），?code= 兼容旧版。
+   2026-10-17：改常量时间比较，与 liuyao 侧同一实现。 */
+async function isAdmin(env, request, q) {
+  if (!env || !env.ACCESS_CODE) return false;
+  return await L.safeEqual(L.accessCodeOf(request, q), env.ACCESS_CODE);
 }
 
 function parseId(id) {
@@ -38,13 +41,14 @@ async function handle(request, env) {
   if (request.method === 'GET') {
     const all = q.get('all') === '1';
     if (all && !env.ACCESS_CODE) return L.errMsg('未设置 ACCESS_CODE，禁止全量查询', 403);
-    if (all && !isAdmin(env, q)) return L.errMsg('口令错误', 401);
+    if (all && !(await isAdmin(env, request, q))) return L.errMsg('口令错误', 401);
     const id = q.get('id');
     if (id) {
       const idNum = parseId(id);
       if (idNum === null) return L.errMsg('id 须为正整数', 400);
       /* F5：单条详情也按网络隔离（含 question/answer 原文） */
-      const row = isAdmin(env, q)
+      const admin = await isAdmin(env, request, q);
+      const row = admin
         ? await env.QM_DB.prepare('SELECT ' + COLS_FULL + ' FROM readings WHERE id=?').bind(idNum).first()
         : await env.QM_DB.prepare('SELECT ' + COLS_FULL + ' FROM readings WHERE id=? AND ip_hash=?').bind(idNum, ipHash).first();
       if (!row) return L.errMsg('记录不存在', 404);
@@ -73,16 +77,16 @@ async function handle(request, env) {
       const idNum = parseId(id);
       if (idNum === null) return L.errMsg('id 须为正整数', 400);
       /* F5：单条删除仅限本网络；管理口令可删任意条 */
-      const rs = isAdmin(env, q)
+      const admin = await isAdmin(env, request, q);
+      const rs = admin
         ? await env.QM_DB.prepare('DELETE FROM readings WHERE id=?').bind(idNum).run()
         : await env.QM_DB.prepare('DELETE FROM readings WHERE id=? AND ip_hash=?').bind(idNum, ipHash).run();
       if (!(rs.meta && rs.meta.changes)) return L.errMsg('记录不存在或不属于本网络', 404);
       return L.json({ ok: true, deleted: idNum });
     }
     if (q.get('all')) {
-      const code = env.ACCESS_CODE;
-      if (!code) return L.errMsg('未设置 ACCESS_CODE，禁止清空', 403);
-      if (q.get('code') !== code) return L.errMsg('口令错误', 401);
+      if (!env.ACCESS_CODE) return L.errMsg('未设置 ACCESS_CODE，禁止清空', 403);
+      if (!(await isAdmin(env, request, q))) return L.errMsg('口令错误', 401);
       await env.QM_DB.prepare('DELETE FROM readings').run();
       return L.json({ ok: true, cleared: true });
     }
@@ -93,5 +97,5 @@ async function handle(request, env) {
 }
 
 /* ---- Pages Functions 路由（ESM 导出） ---- */
-export async function onRequest(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env)); }
+export async function onRequest(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env), ctx.env); }
 export { handle };

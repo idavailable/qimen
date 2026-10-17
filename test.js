@@ -1012,27 +1012,31 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   ck('提示词含四段契约',SRV_PROMPT.includes('盘面事实不可改写')&&SRV_PROMPT.includes('主次次序')
      &&SRV_PROMPT.includes('追问沿用原盘')&&SRV_PROMPT.includes('现实边界'),true);
 
-  /* ---- 四轮审计 P2-1：CORS 白名单（'*' → echo 白名单 + null） ---- */
+  /* ---- 四轮审计 P2-1：CORS 白名单（2026-10-17：route 改 await + null 默认关闭） ---- */
   console.log('\n=== 四轮 P2-1 CORS 白名单 ===');
   {
     const mkReq=o=>({headers:{get:k=>k.toLowerCase()==='origin'?o:null}});
     const mkResp=()=>new Response('x',{status:200,headers:{'Content-Type':'text/plain'}});
     const hd=(r,k)=>r.headers.get(k);
-    const a1=L.route(mkReq('https://qimen-2i1.pages.dev'),mkResp());
+    const a1=await L.route(mkReq('https://qimen-2i1.pages.dev'),mkResp(),{});
     ck('32.91 pages.dev 域名回显自身',hd(a1,'Access-Control-Allow-Origin'),'https://qimen-2i1.pages.dev');
-    const a2=L.route(mkReq('https://qimen.dhxlsfn.dpdns.org'),mkResp());
+    const a2=await L.route(mkReq('https://qimen.dhxlsfn.dpdns.org'),mkResp(),{});
     ck('32.92 自定义域回显自身',hd(a2,'Access-Control-Allow-Origin'),'https://qimen.dhxlsfn.dpdns.org');
-    const a3=L.route(mkReq('null'),mkResp());
-    ck('32.93 放行 null（file:// 本地模式不被误杀）',hd(a3,'Access-Control-Allow-Origin'),'null');
-    const b1=L.route(mkReq('https://evil.example.com'),mkResp());
+    const a3=await L.route(mkReq('null'),mkResp(),{});
+    ck('32.93 Origin null 默认拒绝（sandbox iframe 不再可跨站）',hd(a3,'Access-Control-Allow-Origin'),null);
+    const a3b=await L.route(mkReq('null'),mkResp(),{QM_ALLOW_NULL_ORIGIN:'1'});
+    ck('32.93b 显式 QM_ALLOW_NULL_ORIGIN=1 才放行 file://',hd(a3b,'Access-Control-Allow-Origin'),'null');
+    const b1=await L.route(mkReq('https://evil.example.com'),mkResp(),{});
     ck('32.94 未知来源不回 ACAO',hd(b1,'Access-Control-Allow-Origin'),null);
-    const b2=L.route(mkReq(null),mkResp());
+    const b2=await L.route(mkReq(null),mkResp(),{});
     ck('32.95 无 Origin 头不回 ACAO',hd(b2,'Access-Control-Allow-Origin'),null);
-    const v1=L.route(mkReq('https://qimen-2i1.pages.dev'),mkResp());
+    const v1=await L.route(mkReq('https://qimen-2i1.pages.dev'),mkResp(),{});
     ck('32.96 回显时带 Vary: Origin',hd(v1,'Vary'),'Origin');
-    const s1=L.route(mkReq('https://qimen-2i1.pages.dev'),new Response('data: x\n\n',{status:200,headers:L.sseHeaders()}));
+    const s1=await L.route(mkReq('https://qimen-2i1.pages.dev'),new Response('data: x\n\n',{status:200,headers:L.sseHeaders()}),{});
     ck('32.97 对流式 SSE 响应同样生效',hd(s1,'Access-Control-Allow-Origin'),'https://qimen-2i1.pages.dev');
     ck('32.98 裸 cors() 不再吐 ACAO（漏包 route 也不泄露）',L.cors()['Access-Control-Allow-Origin']||null,null);
+    const p1=await L.route(mkReq('https://qimen-2i1.pages.dev'),Promise.resolve(mkResp()),{});
+    ck('32.99 route 接受 Promise（handle 为 async）并保留响应体',await p1.text(),'x');
   }
 
   /* D1 存根（记录每条 SQL 及其绑定参数；meta 对齐真实 D1：changes/last_row_id） */  function fakeD1(){
@@ -1208,7 +1212,7 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   const CP=JSON.stringify([{id:'kimi',label:'Moonshot',base:'https://api.moonshot.cn/v1',models:['kimi-k2']}]);
 
   let mj=await (await fm.handle(mkReqM(),{})).json();
-  ck('28.1 返回 4 个内置模型',mj.models.length,4);
+  ck('28.1 返回 3 个内置模型（v4-pro 已下架）',mj.models.length,3);
   ck('28.2 无密钥时 configured 全 false',mj.models.every(m=>m.configured===false),true);
   ck('28.3 无密钥时给出告警',(mj.warnings||[]).some(w=>w.indexOf('未配置密钥')>=0),true);
   mj=await (await fm.handle(mkReqM(),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d'})).json();
@@ -1498,10 +1502,10 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
     const html = fsx.readFileSync('./public/index.html', 'utf8') + '\n' + fsx.readFileSync('./public/app.js', 'utf8');
     ck('30.35 存档面板含口令输入与「读全部」勾选', html.indexOf('id="savesCode"') >= 0 && html.indexOf('id="savesAll"') >= 0, true);
     const all = html.match(/async function cloudSavesAll\(code\)\{[\s\S]*?\n\}/);
-    ck('30.36 全量查询走 ?all=1&code=', !!all && all[0].indexOf('/api/saves?limit=100&all=1&code=') >= 0, true);
+    ck('30.36 全量查询口令走 X-Access-Code 头（不进 URL）', !!all && all[0].indexOf('/api/saves?limit=100&all=1') >= 0 && all[0].indexOf("'X-Access-Code'") >= 0 && all[0].indexOf('&code=') < 0, true);
     ck('30.37 全量条目带 admin 标记（供删除时附口令）', !!all && all[0].indexOf('admin:true') >= 0, true);
     const del = html.match(/async function delSave\(id\)\{[\s\S]*?\n\}/);
-    ck('30.38 删跨网络存档附口令', !!del && del[0].indexOf('row.admin&&code') >= 0 && del[0].indexOf('&code=') >= 0, true);
+    ck('30.38 删跨网络存档附口令（请求头，不拼 URL）', !!del && del[0].indexOf('row.admin&&code') >= 0 && del[0].indexOf("'X-Access-Code'") >= 0 && del[0].indexOf('&code=') < 0, true);
     ck('30.39 口令与勾选持久化（KEY: qm_code_v1 / qm_all_v1）', html.indexOf("'qm_code_v1'") >= 0 && html.indexOf("'qm_all_v1'") >= 0, true);
     const lp = html.match(/function loadParams\(p\)\{[\s\S]*?\n\}/);
     ck('30.40 读档下拉值走选项白名单（iClock/iZi/iJi/iPan/iMethod/iTq/yCat 七处，非法值回退不置空）',
@@ -1529,6 +1533,49 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
     ck('30.47 摘要标注派别与定局法', !!cs && cs[0].indexOf("转盘派") >= 0 && cs[0].indexOf("置闰法") >= 0, true);
     ck('30.48 副标题与告示条不再写「尚未实现」',
       html.indexOf('转盘/飞盘') >= 0 && html.indexOf('尚未实现') < 0 && html.indexOf('流派配置') >= 0, true);
+  }
+
+  /* ---- 31. CORS 出口与 SSRF 硬化（2026-10-17） ----
+     事故：route(req, handle(...)) 把 async handle 的 Promise 当 Response 用，
+     带 Origin 的请求一律 200 + 空体；同源 POST 也带 Origin，线上解读/存档因此全空。 */
+  {
+    const O = 'https://qimen.dhxlsfn.dpdns.org';
+    const rOk = await fm.onRequest({
+      request: new Request('https://x/api/models', { headers: { Origin: O } }),
+      env: { GEMINI_API_KEY: 'k' }
+    });
+    const jOk = await rOk.json();
+    ck('31.1 带 Origin 的 onRequest 仍有响应体', Array.isArray(jOk.models) && jOk.models.length > 0, true);
+    ck('31.2 白名单来源回显 ACAO', rOk.headers.get('access-control-allow-origin'), O);
+
+    const rNull = await fm.onRequest({
+      request: new Request('https://x/api/models', { headers: { Origin: 'null' } }),
+      env: { GEMINI_API_KEY: 'k' }
+    });
+    ck('31.3 Origin null 默认不回 ACAO（防 sandbox iframe 跨站）', rNull.headers.get('access-control-allow-origin'), null);
+
+    const rNullOn = await fm.onRequest({
+      request: new Request('https://x/api/models', { headers: { Origin: 'null' } }),
+      env: { GEMINI_API_KEY: 'k', QM_ALLOW_NULL_ORIGIN: '1' }
+    });
+    ck('31.4 显式 QM_ALLOW_NULL_ORIGIN=1 时才放行 file://', rNullOn.headers.get('access-control-allow-origin'), 'null');
+
+    const rRecords = await fr.onRequest({
+      request: new Request('https://x/api/records?limit=1', { headers: { Origin: O, 'CF-Connecting-IP': '9.9.9.9' } }),
+      env: { QM_DB: fakeD1() }
+    });
+    const jRecords = await rRecords.json();
+    ck('31.5 records 带 Origin 也返回 JSON 而非空体', Array.isArray(jRecords.records), true);
+
+    ck('31.6 models 列表已下架 v4-pro', jOk.models.some(m => m.id === 'deepseek-v4-pro'), false);
+    ck('31.7 BYOK 主机名一律拒 IPv6 字面量', L.byokBaseOk('http://[::ffff:127.0.0.1]/v1'), false);
+    ck('31.8 BYOK 拒十进制整数主机名', L.byokBaseOk('http://2130706433/v1'), false);
+    ck('31.9 BYOK 拒 rebinding 域名', L.byokBaseOk('http://127.0.0.1.nip.io/v1'), false);
+    ck('31.10 BYOK 拒 URL 内嵌账号密码', L.byokBaseOk('http://user:pass@api.example.com/v1'), false);
+    ck('31.11 BYOK 正常公网地址放行', L.byokBaseOk('https://api.example.com/v1'), true);
+
+    ck('31.12 常量时间口令：正确为真', await L.safeEqual('s3', 's3'), true);
+    ck('31.13 常量时间口令：错误为假', await L.safeEqual('s3', 's4'), false);
   }
 
   globalThis.fetch = origFetch;

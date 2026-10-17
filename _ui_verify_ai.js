@@ -347,10 +347,14 @@ g('aiMode').value='auto';
 {
   const savedFetchL=fetch;
   const calls=[];
+  const hdrCode=init=>{
+    const h=(init&&init.headers)||{};
+    return h['X-Access-Code']||h['x-access-code']||'';
+  };
   fetch=function(url,init){
     calls.push({url:String(url),init:init});
-    /* 全量查询：服务端按 code 校验；模拟「口令正确 → 返回含一条跨网络存档」 */
-    if(String(url).indexOf('all=1')>=0&&String(url).indexOf('code=secret')>=0)
+    /* 全量查询：服务端按 X-Access-Code 头校验；模拟「口令正确 → 返回含一条跨网络存档」 */
+    if(String(url).indexOf('all=1')>=0&&hdrCode(init)==='secret')
       return Promise.resolve({ok:true,json:()=>Promise.resolve({saves:[
         {id:99,created_at:'2026-10-11 08:00:00',label:'跨网络存档',pillars:'跨网络存档',
          params:{date:'2026-10-11',time:'08:00',lon:'118',clock:'local',zi:'0',ji:'8',cat:'tianqi',q:''}}
@@ -364,16 +368,16 @@ g('aiMode').value='auto';
   /* L1 未勾选时仍只查本网络（回归：默认行为不变） */
   g('savesCode').value='';g('savesAll').checked=false;calls.length=0;
   await renderSaves();
-  ck('L1 默认只查本网络（不带 all/code）',
-     calls.length===1&&calls[0].url.indexOf('all=1')<0&&calls[0].url.indexOf('code=')<0,
-     '实际='+JSON.stringify(calls.map(c=>c.url)));
+  ck('L1 默认只查本网络（不带 all / 不带口令头）',
+     calls.length===1&&calls[0].url.indexOf('all=1')<0&&!hdrCode(calls[0].init),
+     '实际='+JSON.stringify(calls.map(c=>({u:c.url,h:hdrCode(c.init)}))));
 
   /* L2 勾选 + 口令 → 走全量查询 */
   g('savesCode').value='secret';g('savesAll').checked=true;calls.length=0;
   await renderSaves();
-  ck('L2 勾选+口令走全量查询（all=1&code=）',
-     calls.length===1&&calls[0].url.indexOf('all=1')>=0&&calls[0].url.indexOf('code=secret')>=0,
-     '实际='+JSON.stringify(calls.map(c=>c.url)));
+  ck('L2 勾选+口令走全量查询（口令在 X-Access-Code 头，不进 URL）',
+     calls.length===1&&calls[0].url.indexOf('all=1')>=0&&calls[0].url.indexOf('code=')<0&&hdrCode(calls[0].init)==='secret',
+     '实际='+JSON.stringify(calls.map(c=>({u:c.url,h:hdrCode(c.init)}))));
   ck('L3 跨网络存档进入列表',g('savesList').innerHTML.indexOf('跨网络存档')>=0,
      '实际='+g('savesList').innerHTML.slice(0,80));
   ck('L3b 面板提示全量条数',g('savesMsg').textContent.indexOf('全量云端存档')>=0,'实际='+g('savesMsg').textContent);
@@ -395,8 +399,8 @@ g('aiMode').value='auto';
   await renderSaves();
   await delSave('C99');
   const dL=calls.filter(c=>c.init&&c.init.method==='DELETE');
-  ck('L7 删跨网络存档带 code',dL.length===1&&dL[0].url.indexOf('id=99')>=0&&dL[0].url.indexOf('code=secret')>=0,
-     '实际='+JSON.stringify(dL.map(x=>x.url)));
+  ck('L7 删跨网络存档带口令头',dL.length===1&&dL[0].url.indexOf('id=99')>=0&&dL[0].url.indexOf('code=')<0&&hdrCode(dL[0].init)==='secret',
+     '实际='+JSON.stringify(dL.map(x=>({u:x.url,h:hdrCode(x.init)}))));
 
   /* L8 勾选状态持久化 */
   ck('L8 勾选状态持久化',localStorage.getItem('qm_all_v1')==='1','实际='+localStorage.getItem('qm_all_v1'));

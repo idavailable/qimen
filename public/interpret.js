@@ -86,7 +86,9 @@ function buildPanText(R,catId){
       if(yq.valueShi)L.push('值使门落'+yq.valueShi+'宫 → 事期约 '+yq.valueShi+'（随尺度取年/月/日/时，伏吟延长、反吟提前）');
     }
   }
-  return L.join('\n').slice(0,LIMITS.panText);
+  /* 不再静默 slice：超限时截断会砍掉用神/应期段，AI 仍照残缺盘面断且无任何提示。
+     典型盘面 1.2k–1.7k 字，远低于 4000；真超限交给服务端明确报「盘面过长」。 */
+  return L.join('\n');
 }
 
 /* ---------- 请求体组装（纯函数可测） ---------- */

@@ -8,9 +8,16 @@ const LIMITS = { panText: 4000, historyTurns: 8, perMessage: 2000, question: 500
 
 /* ---------- CORS ----------
    四轮审计 P2-1：原为 '*'，任意站点都能调服务端代理烧密钥额度。
-   收紧为白名单 echo（含 'null'——本地双击 file:// 打开的页面 Origin 即为 null，
-   不放行会把本地用户的服务端代理模式打挂）；未知来源不回 CORS 头（浏览器拦截）。 */
-const CORS_ORIGINS = ['https://qimen-2i1.pages.dev', 'https://qimen.dhxlsfn.dpdns.org', 'null'];
+   收紧为白名单 echo；未知来源不回 CORS 头（浏览器拦截）。
+   2026-10-17：'null'（file:// 与 sandbox iframe 共用此 Origin）不再默认放行——
+   任意页面的 sandbox iframe 都能拿到 Origin: null，等于把 IP 隔离的记录暴露给跨站脚本。
+   本地 file:// 若确需服务端代理，显式设 QM_ALLOW_NULL_ORIGIN=1 自行承担。 */
+const CORS_ORIGINS = ['https://qimen-2i1.pages.dev', 'https://qimen.dhxlsfn.dpdns.org'];
+function originAllowed(o, env) {
+  if (!o) return false;
+  if (CORS_ORIGINS.indexOf(o) >= 0) return true;
+  return o === 'null' && !!(env && env.QM_ALLOW_NULL_ORIGIN === '1');
+}
 function cors(extra) {
   const h = {
     'Access-Control-Allow-Methods': 'GET,POST,DELETE,OPTIONS',
@@ -20,13 +27,6 @@ function cors(extra) {
   };
   return Object.assign(h, extra || {});
 }
-/* 按请求 Origin 回 CORS 头；未知来源一律不回（等价于浏览器侧拒绝） */
-function corsWith(req, extra) {
-  let o = null;
-  try { o = req && req.headers && req.headers.get ? req.headers.get('Origin') : null; } catch (e) { o = null; }
-  if (o && CORS_ORIGINS.indexOf(o) >= 0) return cors(Object.assign({ 'Access-Control-Allow-Origin': o }, extra || {}));
-  return cors(extra);
-}
 function json(data, status) {
   return new Response(JSON.stringify(data), {
     status: status || 200,
@@ -34,11 +34,14 @@ function json(data, status) {
   });
 }
 /* 集中出口：按请求 Origin 回显 CORS 头（白名单见 CORS_ORIGINS）。
-   在各 API 的 onRequest* 出口包一层即可，内部（含流式 SSE）无需逐个改。 */
-function route(req, resp) {
+   2026-10-17 修复：必须是 async 并 await 内部响应——旧版直接把 `handle()` 的
+   Promise 当 Response 用（resp.headers / resp.body 全是 undefined），带 Origin 的
+   请求一律得到「200 + 空体」。浏览器同源 POST 也带 Origin，故线上解读/存档全空。 */
+async function route(req, resp, env) {
+  resp = await resp;
   let o = null;
   try { o = req && req.headers && req.headers.get ? req.headers.get('Origin') : null; } catch (e) { o = null; }
-  if (!o || CORS_ORIGINS.indexOf(o) < 0) return resp;
+  if (!originAllowed(o, env)) return resp;
   try {
     const h = new Headers(resp.headers);
     h.set('Access-Control-Allow-Origin', o);
@@ -47,6 +50,29 @@ function route(req, resp) {
   } catch (e) { return resp; }
 }
 function options() { return new Response(null, { status: 204, headers: cors() }); }
+
+/* ---------- 常量时间比较（口令） ----------
+   直接 a === b 会因短路提前返回而泄露前缀信息；口令走网络时虽难利用，
+   但与 liuyao 侧保持同一实现，避免两处口径漂移。 */
+async function safeEqual(input, expected) {
+  const e = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest('SHA-256', e.encode(String(input == null ? '' : input))),
+    crypto.subtle.digest('SHA-256', e.encode(String(expected == null ? '' : expected)))
+  ]);
+  const va = new Uint8Array(a), vb = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < va.length; i++) diff |= va[i] ^ vb[i];
+  return diff === 0;
+}
+/* 管理口令：优先请求头 X-Access-Code（不进 URL/日志/历史），保留 ?code= 兼容旧前端 */
+function accessCodeOf(request, sp) {
+  try {
+    const h = request && request.headers && request.headers.get ? request.headers.get('X-Access-Code') : '';
+    if (h) return h;
+  } catch (e) { /* 无 headers */ }
+  return (sp && sp.get && sp.get('code')) || '';
+}
 
 /* ---------- SSE 构造（统一格式，前端 parseSSEChunk 可直接解析） ---------- */
 function sseHeaders() {
@@ -185,11 +211,10 @@ function norm(base) { return String(base || '').replace(/\/+$/, ''); }
 const BUILTIN_MODELS = [
   { id: 'gemini-3.6-flash', pv: 'Google' },
   { id: 'gemini-3.8-flash', pv: 'Google' },
-  { id: 'deepseek-flash', pv: 'DeepSeek' },
-  { id: 'deepseek-v4-pro', pv: 'DeepSeek' }
+  { id: 'deepseek-flash', pv: 'DeepSeek' }
 ];
 
-/* 模型 id → 展示名：gemini-3.6-flash → Gemini 3.6 Flash；deepseek-v4-pro → DeepSeek V4 Pro */
+/* 模型 id → 展示名：gemini-3.6-flash → Gemini 3.6 Flash */
 function modelLabel(id) {
   const s = String(id || '');
   const fam = /^deepseek/i.test(s) ? 'DeepSeek' : (/^gemini/i.test(s) ? 'Gemini' : '');
@@ -220,14 +245,25 @@ function familyModels(env, from) {
   const seen = new Set();
   return list.filter(m => { if (seen.has(m)) return false; seen.add(m); return true; });
 }
-/* F11：BYOK base 校验——仅公网 http(s)，禁回环/内网/保留地址，堵住借服务端 fetch 探测内网的 SSRF 面 */
+/* F11：BYOK base 校验——仅公网 http(s)，禁回环/内网/保留地址，堵住借服务端 fetch 探测内网的 SSRF 面。
+   2026-10-17 补强：
+   · 拒 URL 内嵌账号密码（http://user:pass@host）；
+   · 拒全部 IPv6 字面量（::1/fd00::/fe80::/::ffff:127.0.0.1 映射段等，逐个枚举难免漏）；
+   · 拒十进制/十六进制整数形式的主机名（http://2130706433/ = 127.0.0.1）；
+   · 拒常见「任意 IP 转域名」服务（nip.io/sslip.io/xip.io 等），它们能把 127.0.0.1 伪装成域名。
+   注：DNS rebinding 无法在字符串层根治，故 connectUpstream 对 BYOK 另加 redirect:'manual'。 */
+const REBIND_SUFFIX = ['.nip.io', '.sslip.io', '.xip.io', '.localtest.me', '.lvh.me', '.vcap.me'];
 function byokBaseOk(base) {
   try {
     const u = new URL(String(base));
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (u.username || u.password) return false;
     const h = u.hostname.toLowerCase();
-    if (h === 'localhost' || h === '::1' || h === '[::1]') return false;
+    if (h === 'localhost' || h.indexOf(':') >= 0) return false;   // 含 [::1]、IPv4 映射段等全部 IPv6 字面量
     if (h.endsWith('.internal') || h.endsWith('.local') || h.endsWith('.localhost') || h.endsWith('.lan')) return false;
+    if (REBIND_SUFFIX.some(s => h.endsWith(s))) return false;
+    if (/^\d+$/.test(h)) return false;                             // 纯十进制整数主机名
+    if (/^0x[0-9a-f]+$/.test(h)) return false;                     // 十六进制整数主机名
     const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
     if (v4) {
       const a = +v4[1], b = +v4[2];
@@ -334,6 +370,9 @@ export { route };
 export { cors };
 export { json };
 export { options };
+export { safeEqual };
+export { accessCodeOf };
+export { originAllowed };
 export { sseHeaders };
 export { sseDelta };
 export { sseEvent };

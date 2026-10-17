@@ -40,8 +40,10 @@ function parseId(id) {
   return n;
 }
 
-function isAdmin(env, sp) {
-  return !!(env && env.ACCESS_CODE && sp.get('code') === env.ACCESS_CODE);
+/* 管理口令：优先 X-Access-Code 头，?code= 兼容旧版；常量时间比较（2026-10-17）。 */
+async function isAdmin(env, request, sp) {
+  if (!env || !env.ACCESS_CODE) return false;
+  return await L.safeEqual(L.accessCodeOf(request, sp), env.ACCESS_CODE);
 }
 
 async function handle(request, env) {
@@ -75,7 +77,7 @@ async function handle(request, env) {
     /* F5：默认只回本网络的存档；全量需管理口令 */
     const all = sp.get('all') === '1';
     if (all && !env.ACCESS_CODE) return L.errMsg('未设置 ACCESS_CODE，禁止全量查询', 403);
-    if (all && !isAdmin(env, sp)) return L.errMsg('口令错误', 401);
+    if (all && !(await isAdmin(env, request, sp))) return L.errMsg('口令错误', 401);
     const rs = all
       ? await env.QM_DB.prepare(
           'SELECT id, created_at, label, pillars, params FROM saves ORDER BY id DESC LIMIT ?'
@@ -100,7 +102,8 @@ async function handle(request, env) {
     const idNum = parseId(id);
     if (idNum === null) return L.errMsg('id 须为正整数', 400);
     /* F5：单条删除仅限本网络自己的存档；管理口令可删任意条 */
-    const rs = isAdmin(env, sp)
+    const admin = await isAdmin(env, request, sp);
+    const rs = admin
       ? await env.QM_DB.prepare('DELETE FROM saves WHERE id=?').bind(idNum).run()
       : await env.QM_DB.prepare('DELETE FROM saves WHERE id=? AND ip_hash=?').bind(idNum, ipHash).run();
     if (!(rs.meta && rs.meta.changes)) return L.errMsg('存档不存在或不属于本网络', 404);
@@ -111,5 +114,5 @@ async function handle(request, env) {
 }
 
 /* ---- Pages Functions 路由（ESM 导出） ---- */
-export async function onRequest(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env)); }
+export async function onRequest(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env), ctx.env); }
 export { handle };

@@ -55,6 +55,6 @@ async function handle(request, env) {
   });
 }
 
-export async function onRequest(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env)); }
-export async function onRequestGet(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env)); }
+export async function onRequest(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env), ctx.env); }
+export async function onRequestGet(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env), ctx.env); }
 export { handle };

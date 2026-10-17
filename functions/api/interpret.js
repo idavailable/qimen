@@ -22,13 +22,25 @@ function recordReading(env, ctx, row) {
   if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(p);
 }
 
-/* ---------- 上游建连（单次尝试；失败一律归 null，不抛） ---------- */
-function connectUpstream(prov, model, messages) {
-  return fetch(prov.base + '/chat/completions', {
+/* ---------- 上游建连（单次尝试；失败一律归 null，不抛） ----------
+   2026-10-17：
+   · 接 AbortSignal（总超时 + 客户端断开），避免上游挂起时请求无限悬置；
+   · BYOK 走 redirect:'manual'——公网地址 302 到内网是 byokBaseOk 字符串校验绕不过去的
+     经典 SSRF 路径；手动处理 3xx 并直接判失败。 */
+function connectUpstream(prov, model, messages, signal) {
+  const opts = {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + prov.key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: model, messages: messages, stream: true })
-  }).catch(() => null);
+  };
+  if (signal) opts.signal = signal;
+  if (prov.from === 'byok') opts.redirect = 'manual';
+  return fetch(prov.base + '/chat/completions', opts)
+    .then(r => {
+      if (opts.redirect === 'manual' && r.status >= 300 && r.status < 400) return null; // 不跟随跳转
+      return r;
+    })
+    .catch(() => null);
 }
 
 /* ---------- 七轮：Gemini 单独策略（家族内依次递推） ----------
@@ -76,8 +88,12 @@ async function upstreamDetail(resp) {
 }
 async function upstreamErrorResponse(resp) {
   if (!resp) return L.errMsg('上游连接失败', 502);
+  /* 上游原始错误体只进服务端日志，不回传浏览器：中转站/网关在 401/500 时回显
+     Authorization 或 key 的情况确实存在，透传等于把服务端密钥交出去。
+     前端只需状态码即可提示重试。 */
   const detail = await upstreamDetail(resp);
-  return L.errMsg('上游 HTTP ' + resp.status + (detail ? ' ' + detail : ''), resp.status === 401 ? 401 : 502);
+  if (detail) console.error('[qimen] 上游 HTTP ' + resp.status + ' 详情:', detail);
+  return L.errMsg('上游 HTTP ' + resp.status + '，请稍后重试', resp.status === 401 ? 401 : 502);
 }
 
 async function handle(request, env, ctx) {
@@ -101,6 +117,22 @@ async function handle(request, env, ctx) {
   const history = L.cleanHistory(body.history);
   const question = typeof body.question === 'string' ? body.question.slice(0, L.LIMITS.question) : '';
 
+  /* 上游总超时与客户端断开（2026-10-17）：
+     fetch 在 Workers 里没有默认超时，上游「不返回也不断开」会让请求无限悬置；
+     客户端关页面后也要立刻掐掉上游，否则重试与流式读取仍在烧 token。 */
+  const timeoutMs = Math.max(1000, parseInt(env.QM_LLM_TIMEOUT_MS || '120000', 10) || 120000);
+  const abortCtl = new AbortController();
+  let timedOut = false, clientGone = false;
+  const timer = setTimeout(() => { timedOut = true; abortCtl.abort(); }, timeoutMs);
+  /* Node 测试环境：定时器会把事件循环挂住 120s；Workers 的 setTimeout 返回数字，无 unref */
+  if (timer && typeof timer.unref === 'function') timer.unref();
+  if (request.signal) {
+    const onClientAbort = () => { clientGone = true; abortCtl.abort(); };
+    if (request.signal.aborted) onClientAbort();
+    else request.signal.addEventListener('abort', onClientAbort, { once: true });
+  }
+  const cleanup = () => { clearTimeout(timer); };
+
   /* 系统提示词：以服务端为准（前端也传一份做兜底，取服务端 SYSTEM_PROMPT 常量） */
   const SYS = (env && env.QM_SYSTEM_PROMPT) || SYSTEM_PROMPT;
   const messages = [{ role: 'system', content: SYS }, { role: 'user', content: pan }];
@@ -115,9 +147,9 @@ async function handle(request, env, ctx) {
   /* 首次建连：成功、或「不需要重试的失败」都在此定型——
      后者（401/400/403、非 Gemini 的 503、连接失败…）仍以原 HTTP 状态码直返，
      不引入任何等待，既有契约与响应速度不变。 */
-  let up = await connectUpstream(prov, prov.model, messages);
+  let up = await connectUpstream(prov, prov.model, messages, abortCtl.signal);
   let usedProv = prov;
-  if (!(up && up.ok) && !shouldRetry(prov, up)) return upstreamErrorResponse(up);
+  if (!(up && up.ok) && !shouldRetry(prov, up)) { cleanup(); return upstreamErrorResponse(up); }
 
   const dec = new TextDecoder();
   let reader = null, buf = '', full = '', cut = null, connected = false;
@@ -134,17 +166,18 @@ async function handle(request, env, ctx) {
         for (let i = 1; i <= RETRY_TIMES; i++) {
           notice({ status: provLabel(prov) + ' 通道繁忙（' + failText(up) + '），' + Math.round(retryWaitMs(env) / 1000) + ' 秒后重试（' + i + '/' + RETRY_TIMES + '）' });
           await sleep(retryWaitMs(env));
-          up = await connectUpstream(prov, prov.model, messages);
+          if (abortCtl.signal.aborted) break;   // 总超时或客户端已断开，不再耗时重试
+          up = await connectUpstream(prov, prov.model, messages, abortCtl.signal);
           if (up && up.ok) break;
           if (!retriable(up)) break; /* 变成硬错误（如 401）就不再耗时间 */
         }
         /* 同族递推：换模型即换实例，逐个立即试一次，不再各等 10 秒（否则干等翻倍） */
-        while (!(up && up.ok) && retriable(up)) {
+        while (!(up && up.ok) && retriable(up) && !abortCtl.signal.aborted) {
           const fb = L.fallbackProvider(env, prov, tried);
           if (!fb) break;
           tried.push(fb.model);
           notice({ status: provLabel(prov) + ' 仍不可用，改用同族 ' + L.modelLabel(fb.model) + ' 作答…' });
-          up = await connectUpstream(fb, fb.model, messages);
+          up = await connectUpstream(fb, fb.model, messages, abortCtl.signal);
           if (up && up.ok) { usedProv = fb; notice({ fallback: fb.label }); break; }
         }
         if (!(up && up.ok)) {
@@ -153,6 +186,7 @@ async function handle(request, env, ctx) {
             (nSib ? '、同族 ' + nSib + ' 个模型依次递推' : '') + '后仍不可用（本策略只在 ' + fam + ' 家族内递推，不跨用别家模型）' });
           try { ctrl.enqueue(L.SSE_DONE); } catch (e) { }
           ctrl.close();
+          cleanup();
           return;
         }
       }
@@ -173,14 +207,16 @@ async function handle(request, env, ctx) {
             ctrl.enqueue(L.sseEvent({ error: '上游返回为空' }));
             ctrl.enqueue(L.SSE_DONE);
             ctrl.close();
+            cleanup();
             return;
           }
           ctrl.enqueue(L.sseDelta(text));
           ctrl.enqueue(L.SSE_DONE);
           ctrl.close();
+          cleanup();
           recordReading(env, ctx, {
             created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
-            pan, question, answer: text.slice(0, 4000), model: usedModel(), ipHash, ms: Date.now() - t0
+            pan, question, answer: text.slice(0, 20000), model: usedModel(), ipHash, ms: Date.now() - t0
           });
           return;
         }
@@ -204,21 +240,22 @@ async function handle(request, env, ctx) {
         if (cut !== 'DONE') ctrl.enqueue(L.sseEvent({ warn: cut }));
         ctrl.enqueue(L.SSE_DONE);
         ctrl.close();
+        cleanup();
         try { await reader.cancel(); } catch (e) { }
         recordReading(env, ctx, {
           created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
-          pan, question, answer: L.stripThinking(full).slice(0, 4000), model: usedModel(), ipHash, ms: Date.now() - t0
+          pan, question, answer: L.stripThinking(full).slice(0, 20000), model: usedModel(), ipHash, ms: Date.now() - t0
         });
         return;
       }
     },
-    cancel() { if (reader) { try { reader.cancel(); } catch (e) { } } }
+    cancel() { cleanup(); if (reader) { try { reader.cancel(); } catch (e) { } } }
   });
   return new Response(stream, { status: 200, headers: L.sseHeaders() });
 }
 
 /* ---- Pages Functions 路由（ESM 导出；CommonJS module.exports 不会被识别为路由） ---- */
-export async function onRequestPost(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env, ctx)); }
-export async function onRequestOptions(ctx) { return L.route(ctx.request, L.options()); }
+export async function onRequestPost(ctx) { return L.route(ctx.request, handle(ctx.request, ctx.env, ctx), ctx.env); }
+export async function onRequestOptions(ctx) { return L.route(ctx.request, L.options(), ctx.env); }
 export { handle };
 export { retriable, shouldRetry, isGeminiProv, RETRY_TIMES, RETRY_WAIT_MS };

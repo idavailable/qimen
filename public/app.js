@@ -324,7 +324,8 @@ async function cloudSavesAll(code){
   const online=location.protocol==='https:'||location.protocol==='http:';
   if(!online)return {rows:[],error:''};
   try{
-    const r=await fetch('/api/saves?limit=100&all=1&code='+encodeURIComponent(code));
+    /* 口令走请求头：不再拼进 URL（避免进 CF 日志、浏览器历史、Referer） */
+    const r=await fetch('/api/saves?limit=100&all=1',{headers:{'X-Access-Code':code}});
     let j=null;try{j=await r.json();}catch(e){}
     if(!r.ok)return {rows:[],error:(j&&j.error)||('HTTP '+r.status)};
     return {rows:(j.saves||[]).map(s=>({id:'C'+s.id,cloudId:s.id,created_at:s.created_at,label:s.label,pillars:s.pillars,params:s.params,src:'cloud',admin:true})),error:''};
@@ -399,8 +400,9 @@ async function delSave(id){
     const row=(lastCloud||[]).find(x=>x.id===id);
     /* 跨网络（全量列表）的存档只有管理口令能删；本网络的存档不带口令 */
     const code=savesCode();
-    const q=(row&&row.admin&&code)?('?id='+cid+'&code='+encodeURIComponent(code)):('?id='+cid);
-    try{await fetch('/api/saves'+q,{method:'DELETE'});}catch(e){}
+    const opts={method:'DELETE'};
+    if(row&&row.admin&&code)opts.headers={'X-Access-Code':code};
+    try{await fetch('/api/saves?id='+cid,opts);}catch(e){}
   }
   renderSaves();
 }
@@ -696,7 +698,7 @@ function render(R,m){
       非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·
       <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次；仍不通则<b>在 Gemini 家族内依次递推</b>（如 3.8 Flash → 3.6 Flash），全族试完才报错，<b>不会跨到别家模型</b>；重试与递推进度在该列实时显示 ·
       多模型列<b>等高并各自出滚动条</b>、输出时自动跟随底部 · 模型思考链（reasoning / <code>&lt;think&gt;</code>）一律不入正文、不进追问历史<br>
-      <b>盘面存档</b>：本地存 localStorage、线上同步 D1（默认按<b>本网络</b>隔离，他人不可见）· 面板填<b>管理口令</b>并勾选「读全部」即可<b>跨网络 / 跨设备</b>列出全部云端存档并读档（服务端 <code>?all=1&amp;code=</code> 能力）· 读档时下拉值按选项白名单回退，不会因旧档值非法而把选择框置空<br>
+      <b>盘面存档</b>：本地存 localStorage、线上同步 D1（默认按<b>本网络</b>隔离，他人不可见）· 面板填<b>管理口令</b>并勾选「读全部」即可<b>跨网络 / 跨设备</b>列出全部云端存档并读档（服务端 <code>?all=1</code> + <code>X-Access-Code</code> 头能力）· 读档时下拉值按选项白名单回退，不会因旧档值非法而把选择框置空<br>
       <b>P2-2 PWA 与分享</b>：manifest + Service Worker 离线缓存（<code>/api/</code> 永不缓存、只拦同源 GET）· 起局参数编成 <code>#p=</code> base64url 链接（UTF-8 安全），打开即还原并自动起局 · http(s) 才注册 SW，本地双击 <code>file://</code> 自动跳过<br>
       <b>P2-3 案例复盘与翻局</b>：存档条目增加可选 <code>feedback</code>（事后回填）/ <code>verified</code>（应验/未应验/待验）字段，AI 列下方「七、案例复盘」直接写回本机存档（旧档无字段即空，透明兼容）· 存档同时快照<b>当时的 AI 解读</b>，读档时连同盘面一起只读回看 · 云端存档可「转存本机」后回填 · 「◀ 上一局 / 下一局 ▶」在最近 50 局间翻动，<b>连同流派配置（派别/定局法/寄宫）一起回放</b><br>
       <b>待实现</b>：年命入局（年干支已备表单、未参与盘局）
@@ -820,7 +822,10 @@ function mdInline(s){
   s=s.replace(/\*([^*\n]+)\*/g,(m,c)=>hold('<i>'+c+'</i>'));
   s=s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g,(m,t,u)=>{
     const url=/^https?:\/\//i.test(u)?u:'';           // 只放行 http(s)，防 javascript: 等
-    return hold(url?'<a href="'+url+'" target="_blank" rel="noopener noreferrer">'+t+'</a>':t);
+    /* URL 进的是属性值而不是文本节点：mdEsc 不转义引号，必须自己补——
+       否则 `[x](https://a.com/"onmouseover="alert(1))` 会多解析出一个事件属性（XSS）。 */
+    const safeUrl=url.replace(/&/g,'&amp;').replace(/"/g,'%22').replace(/'/g,'%27').replace(/</g,'%3C').replace(/>/g,'%3E');
+    return hold(url?'<a href="'+safeUrl+'" target="_blank" rel="noopener noreferrer">'+t+'</a>':t);
   });
   s=s.replace(/\u0001(\d+)\u0002/g,(m,i)=>keep[+i]);
   return s;
