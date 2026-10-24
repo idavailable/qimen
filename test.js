@@ -1576,6 +1576,29 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
 
     ck('31.12 常量时间口令：正确为真', await L.safeEqual('s3', 's3'), true);
     ck('31.13 常量时间口令：错误为假', await L.safeEqual('s3', 's4'), false);
+
+    /* ---- 五轮修复回归（2026-10-24） ---- */
+    // P1：云端存档保留流派三键（此前 PARAM_KEYS 缺 pan/method/tq，飞盘/置闰局存云端读档变转盘/拆补）
+    const d1Wu=fakeD1();
+    await sv.handle(mkReqS({label:'飞盘置闰局',params:{date:'2026-10-14',time:'12:00',pan:'fei',method:'zhiran',tq:'yangen-yinkun'}}),{QM_DB:d1Wu});
+    const insWu=JSON.parse(d1Wu.log[0].args[3]);
+    ck('31.14 云端存档保留流派三键 pan/method/tq',insWu.pan==='fei'&&insWu.method==='zhiran'&&insWu.tq==='yangen-yinkun',true,JSON.stringify(insWu));
+    // 流派脏值不入库（值域白名单），合法键不受影响
+    const d1Wd=fakeD1();
+    await sv.handle(mkReqS({params:{date:'2026-10-14',time:'12:00',pan:'evil',method:'chaibu'}}),{QM_DB:d1Wd});
+    const insWd=JSON.parse(d1Wd.log[0].args[3]);
+    ck('31.15 云端存档流派脏值被丢弃（pan=evil 不入库）',insWd.pan===undefined&&insWd.method==='chaibu',true,JSON.stringify(insWd));
+    // P2：旺相休囚死五态（旧版「囚」行条件与「休」重复成死码，我克月令被误报为死）
+    ck('31.16 旺衰五态：同令旺 / 令生我相 / 我生令休',YS.wangshu('甲','卯')==='旺'&&YS.wangshu('甲','子')==='相'&&YS.wangshu('甲','巳')==='休',true);
+    ck('31.17 旺衰五态：我克令囚 / 令克我死（旧版囚为死码）',YS.wangshu('甲','未')==='囚'&&YS.wangshu('甲','酉')==='死',true,YS.wangshu('甲','未')+'/'+YS.wangshu('甲','酉'));
+    // P2：D1 留痕 cat/pillars 限长（此前原样入库，可被恶意写入超长字符串）
+    globalThis.fetch=mockUpstream('sse');
+    const dbCl=fakeD1();
+    const respCl=await fi.handle(mkReq({pan:panTxt,cat:'c'.repeat(5000),pillars:'p'.repeat(5000)}),
+      {QM_API_KEY:'sk',QM_BASE_URL:'https://api.example.com/v1',QM_MODEL:'m1',QM_DB:dbCl});
+    await readSSE(respCl);
+    const insCl=dbCl.log.find(x=>x.sql.indexOf('INSERT INTO readings')===0);
+    ck('31.18 D1 留痕 cat 截到 40 / pillars 截到 120',!!insCl&&insCl.args[1].length===40&&insCl.args[2].length===120,true,insCl?insCl.args[1].length+'/'+insCl.args[2].length:'no-insert');
   }
 
   globalThis.fetch = origFetch;

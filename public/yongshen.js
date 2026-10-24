@@ -269,11 +269,13 @@ const MONTH_ZHI=['寅','卯','辰','巳','午','未','申','酉','戌','亥','�
 function distDZ(from,to){return (DZ12.indexOf(to)-DZ12.indexOf(from)+12)%12;}
 function wangshu(gan,monthZhi){
   const g=WX_GAN[gan]||'土',mw=WX_ZHI[monthZhi];
-  if(g===mw)return'旺';
-  if(SHENG[mw]===g)return'相';
-  if(SHENG[g]===mw)return'休';
-  if(SHENG[mw]&&SHENG[g]===mw)return'囚';
-  return'死';
+  if(g===mw)return'旺';          // 同令者旺
+  if(SHENG[mw]===g)return'相';   // 令生我者相
+  if(SHENG[g]===mw)return'休';   // 我生令者休
+  /* 五轮（2026-10-24）：旧版此行误写为 SHENG[g]===mw（与「休」同条件），永不触发——
+     「我克月令=囚」被并进「死」，应期依据文案把囚误标为死 */
+  if(ke(g,mw))return'囚';        // 我克令者囚
+  return'死';                    // 令克我者死
 }
 function yingqi(R){
   const m=R.meta;if(!m)return null;
@@ -344,5 +346,5 @@ function yingqi(R){
 
 const ALL=Object.keys(CATS);
 
-return{CATS,CAT_RULES,ALL,take,brief,relToDay,ganPal,doorPal,starPal,godPal,pillars,catRule,yingqi};
+return{CATS,CAT_RULES,ALL,take,brief,relToDay,ganPal,doorPal,starPal,godPal,pillars,catRule,yingqi,wangshu};
 });

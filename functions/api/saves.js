@@ -1,6 +1,6 @@
 /* ============================================================
    奇门遁甲 · /api/saves —— 盘面存档（云端）
-   POST {label?, pillars?, params:{date,time,lon,clock,zi,ji,cat,q}} → 存档，返回 id
+   POST {label?, pillars?, params:{date,time,lon,clock,zi,ji,cat,q,pan,method,tq}} → 存档，返回 id
    GET  ?limit=50              → 本网络（ip_hash）最近存档列表
    GET  ?all=1&code=xxx        → 全量列表（需与 ACCESS_CODE 一致；未设则禁止）
    DELETE ?id=123              → 删除单条（仅本网络自己的存档）
@@ -10,7 +10,15 @@
    ============================================================ */
 import * as L from './_lib.js';
 
-const PARAM_KEYS = ['date', 'time', 'lon', 'clock', 'zi', 'ji', 'cat', 'q'];
+/* 五轮（2026-10-24）：白名单补上流派三键 pan/method/tq —— 此前它们被静默丢弃，
+   飞盘/置闰/茅山局存云端后读档变回转盘/拆补，盘面直接错（本地与 #p= 分享链接都保留，
+   唯独云端丢）。流派值域固定（前端下拉三值），非白名单值不入库。 */
+const PARAM_KEYS = ['date', 'time', 'lon', 'clock', 'zi', 'ji', 'cat', 'q', 'pan', 'method', 'tq'];
+const PARAM_ENUM = {
+  pan: ['zhuan', 'fei'],
+  method: ['chaibu', 'zhiran', 'maoshan'],
+  tq: ['suirui', 'yangen-yinkun']
+};
 const MAX_PARAMS = 2048;
 
 function validDate(s) {
@@ -27,7 +35,9 @@ function cleanParams(p) {
   for (const k of PARAM_KEYS) {
     const v = p[k];
     if (v === undefined || v === null || v === '') continue;
-    o[k] = String(v).slice(0, 200);
+    const s = String(v).slice(0, 200);
+    if (PARAM_ENUM[k] && PARAM_ENUM[k].indexOf(s) < 0) continue; // 流派脏值不入库
+    o[k] = s;
   }
   /* F17：时间须为真实存在的日期与 HH:MM（旧正则放行 99:99/99-99） */
   if (!validDate(o.date || '') || !/^([01]\d|2[0-3]):[0-5]\d$/.test(o.time || '')) return null;

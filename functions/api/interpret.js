@@ -116,6 +116,10 @@ async function handle(request, env, ctx) {
 
   const history = L.cleanHistory(body.history);
   const question = typeof body.question === 'string' ? body.question.slice(0, L.LIMITS.question) : '';
+  /* 五轮（2026-10-24）：cat/pillars 原样入库未限长——恶意请求可一次写入超长字符串撑库；
+     与前端天然长度（类别 id / 四柱一行）对齐收紧 */
+  const cat = String(body.cat || '').slice(0, 40);
+  const pillars = String(body.pillars || '').slice(0, 120);
 
   /* 上游总超时与客户端断开（2026-10-17）：
      fetch 在 Workers 里没有默认超时，上游「不返回也不断开」会让请求无限悬置；
@@ -182,7 +186,9 @@ async function handle(request, env, ctx) {
         }
         if (!(up && up.ok)) {
           const nSib = tried.length - 1;
-          notice({ error: '上游 ' + failText(up) + '：' + provLabel(prov) + ' 重试 ' + RETRY_TIMES + ' 次' +
+          /* 总超时 / 客户端断开时 up 停在旧失败上，failText 会误报 503——按真实原因报 */
+          const why = timedOut ? '上游总超时（' + timeoutMs + 'ms）' : (clientGone ? '客户端已断开' : failText(up));
+          notice({ error: '上游 ' + why + '：' + provLabel(prov) + ' 重试 ' + RETRY_TIMES + ' 次' +
             (nSib ? '、同族 ' + nSib + ' 个模型依次递推' : '') + '后仍不可用（本策略只在 ' + fam + ' 家族内递推，不跨用别家模型）' });
           try { ctrl.enqueue(L.SSE_DONE); } catch (e) { }
           ctrl.close();
@@ -215,7 +221,7 @@ async function handle(request, env, ctx) {
           ctrl.close();
           cleanup();
           recordReading(env, ctx, {
-            created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
+            created_at: new Date().toISOString(), cat, pillars,
             pan, question, answer: text.slice(0, 20000), model: usedModel(), ipHash, ms: Date.now() - t0
           });
           return;
@@ -223,7 +229,9 @@ async function handle(request, env, ctx) {
         reader = up.body.getReader();
       }
 
-      /* ③ 流式转发（原语义不变：有增量就回一片并让出，触发下一次 pull） */
+      /* ③ 流式转发（原语义不变：有增量就回一片并让出，触发下一次 pull）
+         五轮（2026-10-24）：enqueue 在客户端断开后会抛 TypeError——此前异常直接冒出，
+         收尾的 D1 留痕跟着丢（二轮已知遗留）；捕获后转 CLIENT_GONE 走正常收尾 */
       while (true) {
         let r;
         try { r = await reader.read(); } catch (e) { cut = cut || 'UPSTREAM_ERROR'; break; }
@@ -233,17 +241,22 @@ async function handle(request, env, ctx) {
         const st = L.parseSSEChunk(buf, full);
         buf = st.buf; full = st.full;
         if (st.cut) { cut = st.cut; break; }
-        if (full.length > before.length) { ctrl.enqueue(L.sseDelta(full.slice(before.length))); return; }
+        if (full.length > before.length) {
+          try { ctrl.enqueue(L.sseDelta(full.slice(before.length))); }
+          catch (e) { cut = 'CLIENT_GONE'; break; }
+          return;
+        }
       }
-      /* 收尾：先送已收到的部分，再送 done */
+      /* 收尾：先送已收到的部分，再送 done（客户端已断开时这些 enqueue 会失败，不得因此跳过留痕） */
       if (cut) {
-        if (cut !== 'DONE') ctrl.enqueue(L.sseEvent({ warn: cut }));
-        ctrl.enqueue(L.SSE_DONE);
+        const safeEnq = ch => { try { ctrl.enqueue(ch); } catch (e) { } };
+        if (cut !== 'DONE') safeEnq(L.sseEvent({ warn: cut }));
+        safeEnq(L.SSE_DONE);
         ctrl.close();
         cleanup();
         try { await reader.cancel(); } catch (e) { }
         recordReading(env, ctx, {
-          created_at: new Date().toISOString(), cat: body.cat || '', pillars: body.pillars || '',
+          created_at: new Date().toISOString(), cat, pillars,
           pan, question, answer: L.stripThinking(full).slice(0, 20000), model: usedModel(), ipHash, ms: Date.now() - t0
         });
         return;
