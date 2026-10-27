@@ -233,6 +233,8 @@ function loadParams(p){
   if(document.getElementById('yCat')&&p.cat!==undefined&&p.cat!==null&&p.cat!=='')
     pickOpt('yCat',p.cat,'qiucai');
   if(document.getElementById('aiQ'))document.getElementById('aiQ').value=p.q||'';
+  /* 自定义求测复用同一份问事文本（存档/分享只存 q 一个字段，不再两份） */
+  if(document.getElementById('yCustom'))document.getElementById('yCustom').value=p.q||'';
 }
 async function savePan(){
   if(!curR||!curR.meta||curR.meta.test){alert('请先以真实日期时间起一局，再存档');return;}
@@ -512,21 +514,48 @@ const relBadge=rel=>{
   const cls=rel==='自身'||rel==='生日干'||rel==='被日干生'?'ji':rel==='克日干'||rel==='日干克'?'xiong':'zhong';
   return `<span class="chip ${cls}" style="margin:0">${rel}</span>`;
 };
+/* 自定义求测的文本唯一来源是 aiQ（存档/分享链接里已有的 q 字段），
+   此处只是就地镜子：避免两个问事框各自维护一份、起局重绘后又对不上。 */
+const customQuestion=()=>{
+  try{return aiQuestion();}catch(e){return (document.getElementById('aiQ')||{}).value||'';}
+};
+function setCustomQuestion(v){
+  const ai=document.getElementById('aiQ');
+  if(ai)ai.value=v;
+  renderYongshen(curR);
+}
+/* AI 区原问事框改动时同步回自定义框，保证两处指向同一件事 */
+function syncCustomQuestion(v){
+  if(aiCat()!=='custom')return;
+  const el=document.getElementById('yCustom');
+  if(el&&el.value!==v)el.value=v;
+  renderYongshen(curR);
+}
 function renderYongshen(R){
   if(R===undefined)R=curR; /* 缺省对当前盘重绘（控制台/测试直调友好） */
   if(!R||!R.meta||R.meta.test)return; // 校验用局无日时干支，用神区不可用
-  const catId=document.getElementById('yCat')?document.getElementById('yCat').value:'qiucai';
-  const t=YS.take(R,catId);
+  const yc=document.getElementById('yCat');
+  const catId=yc?yc.value:'qiucai';
+  const q=catId==='custom'?customQuestion():'';
+  const t=YS.take(R,catId,q);
   if(!t)return; // 类别 id 不在表内（旧档脏值/控制台直调）：不渲染而非抛错
+  const wrap=document.getElementById('yCustomWrap');
+  if(wrap)wrap.style.display=catId==='custom'?'':'none';
+  const note=document.getElementById('ysCustomNote');
+  if(note)note.style.display=catId==='custom'?'':'none';
+  const yCustom=document.getElementById('yCustom');
+  if(yCustom&&catId==='custom')yCustom.value=q;
   const body=t.items.map(x=>{
     const wx=x.pal&&x.pal>=1&&x.pal<=9?PAL[x.pal].wx:'—';
     const kong=x.desc.includes('旬空')?' <span class="tag kong" style="position:static">旬空</span>':'';
     const palTxt=x.pal?`${PAL[x.pal].gua}${x.pal}宫${kong}`:'<span style="color:#A32D2D">未找到</span>';
-    return `<tr><td>${x.role}</td><td><b>${x.sym}</b></td><td>${palTxt}</td><td>${wx}</td><td>${relBadge(x.rel)}</td></tr>`;
+    const role=`${escHtml(x.role)}${x.primary?' <span class="chip ji" style="margin:0">主</span>':''}`+
+      (x.why?`<div style="font-weight:400;color:#6f6e68;font-size:12px;margin-top:2px">${escHtml(x.why)}</div>`:'');
+    return `<tr><td>${role}</td><td><b>${escHtml(x.sym)}</b></td><td>${palTxt}</td><td>${wx}</td><td>${relBadge(x.rel)}</td></tr>`;
   }).join('');
   document.getElementById('ysBody').innerHTML=body;
   document.getElementById('ysName').textContent=`${t.name} · 日干${YS.pillars(R).day}=求测人`;
-  document.getElementById('ysBrief').textContent=YS.brief(R,catId);
+  document.getElementById('ysBrief').textContent=(t.reason?t.reason+' · ':'')+YS.brief(R,catId,q);
 }
 
 function render(R,m){
@@ -640,11 +669,17 @@ function render(R,m){
           <option value="guansi">官司诉讼</option><option value="chuxing">出行远行</option>
           <option value="shiwu">失物</option><option value="tianqi">天气</option>
           <option value="fangdichan">买卖房产</option><option value="kaocha">考试升学</option>
+          <option value="custom">自定义求测（智能取用）</option>
         </select>
+      </div>
+      <div class="field" id="yCustomWrap" style="display:none">
+        <label>自定义所问（智能取用）</label>
+        <input id="yCustom" maxlength="200" style="width:320px" placeholder="例：这笔合同能不能签 · 今年能否升职" oninput="setCustomQuestion(this.value)">
       </div>
       <div class="field"><label>速览</label><div id="ysName" style="font-size:13px;font-weight:600"></div></div>
     </div>
     <div id="ysBrief" class="note" style="margin-top:0"></div>
+    <div id="ysCustomNote" class="legend" style="text-align:left;margin-top:8px;display:none">自定义求测按<b>事项相关度</b>选主辅用神：先识别所问类别，再把点名到的对象（合同→六合/景门、升职→开门/值符/年干等）提到主位，日干为求测人、时干为所测事不动。<b>不按哪个宫看起来吉就挑哪个</b>；未命中细类时只给日干/时干 + 值符/值使，并如实标为通用。</div>
     <table>
       <tr><th style="width:130px">用神角色</th><th style="width:60px">符号</th><th>落宫</th><th style="width:50px">五行</th><th style="width:110px">与日干宫关系</th></tr>
       <tbody id="ysBody"></tbody>
@@ -693,8 +728,9 @@ function render(R,m){
       <b>已实现</b>：真太阳时（经度+均时差）· 太阳视黄经求节气（精度约1分钟）· 三种定局法 —— <b>拆补法</b>（符头三元）、<b>置闰法</b>（超神/接气/正授/置闰，符头块走查，锚点 1717-12-16 甲子，康熙五十七芒种置闰算例复现）、<b>茅山法</b>（交节日当天起算每 5 日一元，不看符头）· 两种排盘派别 —— <b>转盘派</b>（值符加时干转宫）与 <b>飞盘派</b>（九星/八门/九神按洛书数序飞布，八门跳过中五，中五宫有星有神无门、不寄宫）· 天禽寄宫两变体（随天芮 / 阳遁寄艮八·阴遁寄坤二）· 地盘顺仪逆奇飞布 ·
       值符加时干转盘 · 值使按时序洛书飞宫 · 八门随值使转宫 · 八神阳顺阴逆 · 天禽随芮、中宫干寄宫并显 · 旬空（空亡宫）· 日/年驿马 · 日干·时干落宫<br>
       <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
-      <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示<br>
-      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 569 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **甲取旬按本柱旬（日干≠时干口径）** / **立春真实时刻为界的干支年** / 节气基准解耦 / **历法锚点 72 节气+8 日柱（对 lunar-javascript 全量交叉校验）** / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推** / **分页参数 NaN 守卫** / **P1-3 流派配置：飞盘算例四源一致逐宫比对、置闰康熙五十七算例、茅山 2027-12 算例** / **五轮：云端存档保留流派、旺衰五态、留痕限长**）全部通过，另加浏览器沙箱 128 项 + jsdom 复核 10 项 + P1-3 渲染冒烟 42 项 + P2-2 PWA/分享冒烟 23 项<br><br>
+      <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示 ·
+      <b>自定义求测（智能取用）</b>：按所问文本识别事项并择优取用（合同→六合/景门、升职→开门/值符/年干、下雨→天柱等），日干/时干固定为人/事两轴，最多再取 5 个高相关符号；<b>只按事项相关度择优，不按落宫吉凶挑选</b>，未命中细类如实退回日干/时干 + 值符/值使<br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 595 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **甲取旬按本柱旬（日干≠时干口径）** / **立春真实时刻为界的干支年** / 节气基准解耦 / **历法锚点 72 节气+8 日柱（对 lunar-javascript 全量交叉校验）** / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推** / **分页参数 NaN 守卫** / **P1-3 流派配置：飞盘算例四源一致逐宫比对、置闰康熙五十七算例、茅山 2027-12 算例** / **五轮：云端存档保留流派、旺衰五态、留痕限长**）全部通过，另加浏览器沙箱 128 项 + jsdom 复核 10 项 + P1-3 渲染冒烟 42 项 + P2-2 PWA/分享冒烟 23 项<br><br>
       <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
       两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
       非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·
@@ -932,7 +968,8 @@ function aiPan(withQ){
     return null;
   }
   const q=aiQuestion();
-  let pan=QMI.buildPanText(curR,aiCat());
+  /* 自定义求测把同一段问事文本交给择优器，界面/存档/AI 三处取用结果一致 */
+  let pan=QMI.buildPanText(curR,aiCat(),aiCat()==='custom'?q:'');
   if(!pan){aiStatus('当前盘面无法生成提示词',true);return null;}
   if(withQ!==false&&q)pan+='\n【所问何事】'+q.slice(0,500);
   return pan;

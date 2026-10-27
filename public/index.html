@@ -104,7 +104,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
 <body>
 
 <h1>奇门遁甲决策工具</h1>
-<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘/飞盘 · 拆补/置闰/茅山 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 569 项全过 + 浏览器沙箱全流程 128 项 + 渲染冒烟 65 项全过</div>
+<div class="sub">M1 起局引擎 · M2 格局库 · M3 问事用神 · M4 AI 流式解读 &nbsp;|&nbsp; 时家奇门 · 转盘/飞盘 · 拆补/置闰/茅山 &nbsp;|&nbsp; 排盘纯前端无网络请求，解读可选服务端代理 &nbsp;|&nbsp; node test.js 回归 595 项全过 + 浏览器沙箱全流程 134 项 + 渲染冒烟 140 项全过</div>
 
 <div class="card">
   <h2>一、输入</h2>
@@ -202,7 +202,7 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
     <div class="field"><label>密钥</label><input type="password" id="aiKey" style="width:170px"></div>
   </div>
   <div class="row" style="margin-top:10px">
-    <div class="field"><label>补充问事（选填，附于盘面之后）</label><input id="aiQ" style="width:300px" placeholder="例：这笔订单该不该签"></div>
+    <div class="field"><label>补充问事（选填，附于盘面之后；选「自定义求测」时即取用依据）</label><input id="aiQ" style="width:300px" placeholder="例：这笔订单该不该签" oninput="syncCustomQuestion(this.value)"></div>
     <button onclick="aiRun()">流式解读</button>
     <button class="ghost" onclick="aiStop()">停止</button>
     <button class="ghost" onclick="aiCopyPan()">复制盘面提示词</button>
@@ -266,10 +266,10 @@ code{font-family:ui-monospace,Consolas,monospace;background:#f0efe9;padding:1px 
   </div>
 </div>
 
-<script src="engine.js?v=20261024"></script>
-<script src="yongshen.js?v=20261024"></script>
-<script src="prompt.js?v=20261024"></script>
-<script src="interpret.js?v=20261024"></script>
-<script src="app.js?v=20261024"></script>
+<script src="engine.js?v=20261027"></script>
+<script src="yongshen.js?v=20261027"></script>
+<script src="prompt.js?v=20261027"></script>
+<script src="interpret.js?v=20261027"></script>
+<script src="app.js?v=20261027"></script>
 </body>
 </html>

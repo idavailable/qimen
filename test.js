@@ -785,6 +785,49 @@ console.log('\n=== 应期结构化推算（YS.yingqi → 提示词） ===');
 }
 
 
+/* ---- 自定义求测（智能取用：先识别事项，再按相关度选主辅用神） ---- */
+console.log('\n=== 自定义求测（custom → 择优取用） ===');
+{
+  const Rcu=R_ys;
+  const long=YS.cleanCustomQuery(' 这笔  合同\n能不能签 '.repeat(60));
+  ck('34.1 自定义文本清洗：去换行/折叠空白/限长 200',long.length===200&&!/\n/.test(long),true);
+  ck('34.2 合同 → 判为官司诉讼',YS.inferCustom('这笔合同能不能签').catId,'guansi');
+  ck('34.3 命中关键词随结果返回（可解释）',YS.inferCustom('这笔合同能不能签').matches.includes('合同'),true);
+  const t1=YS.take(Rcu,'custom','这笔合同能不能签');
+  ck('34.4 自定义首两条固定为日干/时干',t1.items[0].role==='求测人（世）'&&t1.items[1].role==='所测之事（应）',true);
+  ck('34.5 主用神=六合（合同直取合作/契约）',t1.items.find(x=>x.primary).sym,'六合');
+  ck('34.6 合同补景门为文书',t1.items.some(x=>x.sym==='景门'&&/文书/.test(x.role)),true);
+  ck('34.7 自定义条目≤7（不堆全表）',t1.items.length<=7,true);
+  ck('34.8 自定义用神落宫均在 1-9',t1.items.every(x=>!x.pal||(x.pal>=1&&x.pal<=9)),true);
+  ck('34.9 同输入两次结果一致（择优可复现）',
+    JSON.stringify(YS.take(Rcu,'custom','这笔合同能不能签').items.map(x=>x.sym))===
+    JSON.stringify(t1.items.map(x=>x.sym)),true);
+  const t2=YS.take(Rcu,'custom','今年能否升职');
+  ck('34.10 升职 → 判为工作求职',t2.matchedCat,'gongzuo');
+  ck('34.11 升职主用神=开门',t2.items.find(x=>x.primary).sym,'开门');
+  ck('34.12 升职取年干为上级',t2.items.some(x=>/上级/.test(x.role)),true);
+  const t3=YS.take(Rcu,'custom','明天会不会下雨');
+  ck('34.13 下雨直取天柱为主用神',t3.items.find(x=>x.primary).sym,'天柱');
+  const t4=YS.take(Rcu,'custom','随便问问');
+  ck('34.14 未命中细类 → 通用且主用神=时干',t4.matchedCat===null&&t4.items.find(x=>x.primary).role==='所测之事（应）',true);
+  ck('34.15 通用只用 4 条（日/时 + 值符/值使）',t4.items.length,4);
+  ck('34.16 自定义不改动原 10 类',YS.ALL.length,10);
+  const txt1=QMI.buildPanText(Rcu,'custom','这笔合同能不能签');
+  ck('34.17 buildPanText 自定义含所问/依据/主用神',/自定义所问：/.test(txt1)&&/取用依据：/.test(txt1)&&/主用神/.test(txt1),true);
+  ck('34.18 自定义盘面仍不超入模上限',txt1.length<=QMI.LIMITS.panText,true);
+  ck('34.19 超长自定义文本不撑爆提示词',QMI.buildPanText(Rcu,'custom','合同'.repeat(5000)).length<=QMI.LIMITS.panText,true);
+  const rule1=YS.catRule('custom','这笔合同能不能签');
+  ck('34.20 自定义断法含纲领且带上命中类别断法',/纲领：/.test(rule1)&&/值符|开门|六合/.test(rule1),true);
+  ck('34.21 未命中也有断法且如实标注不确定',/未命中明确类别/.test(YS.catRule('custom','随便问问')),true);
+  ck('34.22 脏输入（标签串）不抛错',typeof YS.take(Rcu,'custom','<img src=x onerror=alert(1)>合同').items[0].sym==='string',true);
+  ck('34.23 brief 含主用神符号',YS.brief(Rcu,'custom','这笔合同能不能签').includes('六合'),true);
+  ck('34.24 非 custom 分支不受影响（仍取全表）',YS.take(Rcu,'qiucai').items.length,7);
+  const t5=YS.take(Rcu,'custom','雷总这笔合作能不能成');
+  ck('34.25 单字「雷」不误判为天气（防误命中）',
+    t5.matchedCat!=='tianqi'&&!t5.items.some(x=>x.sym==='天冲'),true);
+  ck('34.26 「合作」仍直取六合',t5.items.some(x=>x.sym==='六合'),true);
+}
+
 ck('buildPanText 超长截断≤4000',panTxt.length<=QMI.LIMITS.panText,true);
 ck('buildPanText(paipan直出)=null 守卫',QMI.buildPanText(P,'qiucai'),null);
 

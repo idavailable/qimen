@@ -25,7 +25,7 @@ const SSE_MAX_REPLY=200000;
 const SYSTEM_PROMPT=PROMPT;
 
 /* ---------- 盘面 → 文本（入模主体，纯函数可测） ---------- */
-function buildPanText(R,catId){
+function buildPanText(R,catId,customQuery){
   const m=R.meta;
   if(!m)return null; // paipan 直出局无四柱，无法解读
   const py=YS.pillars(R);
@@ -67,14 +67,18 @@ function buildPanText(R,catId){
     for(const x of G)L.push('  ['+x.t+']'+x.txt.split('——')[0]+'——'+(x.pal?('落'+PAL[x.pal].gua+x.pal+'宫'):'全盘')+'：'+x.txt);
   }else L.push('格局检出：无显著格局');
   L.push('');
-  const t=YS.take(R,catId);
+  const t=YS.take(R,catId,customQuery);
   if(t){
     L.push('所问类别：'+t.name);
-    for(const x of t.items){
-      L.push('  '+x.sym+'（'+x.role+'）：'+(x.pal?('落'+PAL[x.pal].gua+x.pal+'宫'+PAL[x.pal].wx+(x.desc.includes('旬空')?'，旬空':'')):'未上盘')+' — '+x.rel);
+    if(catId==='custom'){
+      L.push('自定义所问：'+t.query);
+      L.push('取用依据：'+t.reason+'（按事项相关度选取，不按落宫吉凶挑选）');
     }
-    /* 第十轮：分类断法模板（与 CATS 同源于 yongshen.js，只作断法指引，不改写盘面事实） */
-    const rule=YS.catRule(catId);
+    for(const x of t.items){
+      L.push('  '+x.sym+'（'+x.role+(x.primary?'，主用神':'')+'）：'+(x.pal?('落'+PAL[x.pal].gua+x.pal+'宫'+PAL[x.pal].wx+(x.desc.includes('旬空')?'，旬空':'')):'未上盘')+' — '+x.rel+(x.why?'；'+x.why:''));
+    }
+    /* 分类断法模板与自定义取用规则同源于 yongshen.js，只作断法指引，不改写盘面事实。 */
+    const rule=YS.catRule(catId,customQuery);
     if(rule)L.push('','【本类断法】'+rule);
     /* 第十轮：应期结构化线索（YS.yingqi：尺度 + 应期支 + 值使宫数，只给线索不断吉凶） */
     const yq=YS.yingqi(R);

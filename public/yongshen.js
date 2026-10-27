@@ -206,7 +206,73 @@ const CAT_RULES={
     '断法：天辅生助日干宫则学有所遇；丁奇（文章）旺相而不逢空亡则文有力；'+
     '景门为试卷，逢空亡或门迫防疏漏；录取看值符与日干宫生克。'
 };
-function catRule(id){return CAT_RULES[id]||'';}
+/* ---------- 自定义求测：先识别事项，再按相关度选主辅用神 ----------
+   「择优」只优化取用相关性，绝不按落宫吉凶倒推选哪个符号。
+   关键词仅来自下列规则表，匹配依据可解释、可测试；未命中时退回日干/时干纲领。 */
+const CUSTOM_RULES={
+  qiucai:['求财','财运','生意','经营','投资','股票','基金','赚钱','回款','欠款','讨债','债务','贷款','开店','订单'],
+  gongzuo:['工作','求职','跳槽','升职','升迁','调动','面试','入职','离职','事业','单位','同事','领导','裁员','任免'],
+  hunyin:['婚姻','恋爱','感情','复合','分手','结婚','相亲','对象','配偶','夫妻','桃花'],
+  jibing:['疾病','病情','身体','健康','手术','医院','医生','治疗','康复','医药'],
+  guansi:['官司','诉讼','起诉','法院','仲裁','律师','纠纷','合同','签约','协议'],
+  chuxing:['出行','远行','旅行','旅游','出差','搬家','搬迁','回国','航班','路途'],
+  shiwu:['失物','丢失','找回','遗失','被盗','偷窃','偷走','落在哪'],
+  tianqi:['天气','下雨','降雨','晴天','台风','下雪','暴雨','刮风','打雷'],
+  fangdichan:['房产','买房','卖房','房屋','房子','楼盘','宅基','地皮','风水','租房'],
+  kaocha:['考试','升学','考研','考公','录取','学校','学业','论文','证书','文章']
+};
+/* 具体问法优先于大类默认顺序：直接点名的对象先进入候选。 */
+const CUSTOM_FOCUS=[
+  {keys:['签约','合同','协议','合作'],items:[
+    {t:'神',s:'六合',role:'合作/契约'},{t:'门',s:'景门',role:'合同/文书'}]},
+  {keys:['升职','升迁','调动','任免'],items:[
+    {t:'门',s:'开门',role:'职位/单位'},{t:'值符',role:'主管/决策方'},{t:'gan年',role:'上级领导'}]},
+  {keys:['论文','文章','文书','作品'],items:[
+    {t:'gan自',s:'丁',role:'文章/文书'},{t:'门',s:'景门',role:'文书/卷面'}]},
+  {keys:['欠款','讨债','回款','债务'],items:[
+    {t:'值符',role:'债主/债务方'},{t:'gan戊',role:'资金/资本'}]},
+  {keys:['手术','治疗','医生','医药','康复'],items:[
+    {t:'星',s:'天心',role:'医药/治疗'},{t:'gan自',s:'乙',role:'中医/药'}]},
+  {keys:['被盗','偷窃','偷走'],items:[
+    {t:'神',s:'玄武',role:'盗贼'},{t:'星',s:'天蓬',role:'赃物/大盗'}]},
+  {keys:['下雨','降雨','暴雨'],items:[{t:'星',s:'天柱',role:'降雨'},{t:'星',s:'天蓬',role:'水雨'}]},
+  /* 单字“晴/雷”会误命中（如「雷总」「晴」同形词），只收成词写法。 */
+  {keys:['晴天','天晴','放晴','晴不晴'],items:[{t:'星',s:'天英',role:'晴/火'},{t:'门',s:'景门',role:'晴'}]},
+  {keys:['刮风','风势','大风'],items:[{t:'星',s:'天辅',role:'风'}]},
+  {keys:['打雷','雷雨','雷阵雨','雷声'],items:[{t:'星',s:'天冲',role:'雷'}]}
+];
+/* 各大类的主证优先序；未列出的符号仍可作为辅证，不因盘中吉凶被添删。 */
+const CUSTOM_PRIMARY={
+  qiucai:['门|生门','gan戊|','gan时|'],gongzuo:['门|开门','值符|','gan年|'],
+  hunyin:['神|六合','gan自|乙','gan自|庚'],jibing:['星|天芮','星|天心','gan自|乙'],
+  guansi:['值符|','gan时|','门|开门','门|景门'],chuxing:['gan时|','神|九天','门|伤门','门|景门'],
+  shiwu:['gan时|','神|玄武'],tianqi:['星|天英','星|天柱','星|天蓬'],
+  fangdichan:['门|生门','门|死门','gan时|'],kaocha:['星|天辅','门|景门','gan自|丁']
+};
+function cleanCustomQuery(q){
+  return String(q||'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,200);
+}
+function customKey(it){return it.t+'|'+(it.s||'');}
+function inferCustom(q){
+  const query=cleanCustomQuery(q);
+  let best={catId:null,score:0,matches:[],longest:0};
+  for(const catId of Object.keys(CUSTOM_RULES)){
+    const matches=CUSTOM_RULES[catId].filter(k=>query.includes(k));
+    const score=matches.reduce((n,k)=>n+2+Math.min(k.length,4),0);
+    const longest=matches.reduce((n,k)=>Math.max(n,k.length),0);
+    if(score>best.score||(score===best.score&&score>0&&longest>best.longest))
+      best={catId,score,matches,longest};
+  }
+  return best;
+}
+function catRule(id,customQuery){
+  if(id!=='custom')return CAT_RULES[id]||'';
+  const inf=inferCustom(customQuery);
+  const base='纲领：自定义求测以日干为求测人、时干为所测事，按事项相关度确定主辅用神，不得按落宫吉凶倒推选取。'+
+    '断法：先核主用神与日干宫的生克、旺衰、空亡及格局，再以辅用神补足人、事、物与应期；主辅结论冲突时回到具体所问，不作唯吉取舍。';
+  if(!inf.catId)return base+' 本题未命中明确类别，仅按通用纲领取象，并说明不确定处。';
+  return base+' 本题依据“'+inf.matches.join('、')+'”判为'+CATS[inf.catId].name+'。'+CAT_RULES[inf.catId];
+}
 
 function resolve(R,it,py){
   let pal=null,sym='';
@@ -229,8 +295,55 @@ function resolve(R,it,py){
   return{sym,role:it.role,pal,desc:d.txt,rel:rl.rel};
 }
 
-/* 取某类别全部用神 */
-function take(R,catId){
+/* 自定义求测：固定人/事两轴，最多再取 5 个高相关符号，避免全表堆砌。 */
+function takeCustom(R,q){
+  const query=cleanCustomQuery(q),py=pillars(R),inf=inferCustom(query);
+  const fixed=[
+    {it:{t:'gan日',role:'求测人（世）'},why:'通用纲领：日干为求测人'},
+    {it:{t:'gan时',role:'所测之事（应）'},why:'通用纲领：时干为所测事',primary:!inf.catId}
+  ];
+  const candidates=[],seen=new Set(fixed.map(x=>customKey(x.it)));
+  let order=0;
+  function add(it,rank,why){
+    const key=customKey(it);
+    if(seen.has(key))return;
+    seen.add(key);candidates.push({it,rank,why,order:order++});
+  }
+  /* 直接命中的具体对象权重最高。 */
+  for(const focus of CUSTOM_FOCUS){
+    const hits=focus.keys.filter(k=>query.includes(k));
+    if(!hits.length)continue;
+    const hit=hits.slice().sort((a,b)=>b.length-a.length)[0];
+    focus.items.forEach((it,i)=>add(it,100-i,'问题直指“'+hit+'”，优先取'+it.role));
+  }
+  if(inf.catId){
+    const cat=CATS[inf.catId],preferred=CUSTOM_PRIMARY[inf.catId]||[];
+    cat.ys.forEach((it,i)=>{
+      const pri=preferred.indexOf(customKey(it));
+      const rank=pri>=0?70-pri:40-i;
+      add(it,rank,(pri>=0?'主证':'辅证')+'：按'+cat.name+'取'+it.role);
+    });
+  }else{
+    add({t:'值符',role:'主导/趋势'},50,'未命中细类，以值符辅看主导趋势');
+    add({t:'值使',role:'执行/应期'},49,'未命中细类，以值使辅看执行与应期');
+  }
+  candidates.sort((a,b)=>(b.rank-a.rank)||(a.order-b.order));
+  const chosen=candidates.slice(0,5);
+  if(inf.catId&&chosen.length)chosen[0].primary=true;
+  const items=fixed.concat(chosen).map(c=>Object.assign(resolve(R,c.it,py),{
+    why:c.why,primary:!!c.primary
+  }));
+  const primary=items.find(x=>x.primary)||items[1];
+  const name='自定义求测 · '+(inf.catId?CATS[inf.catId].name:'通用');
+  const reason=inf.catId
+    ?'命中“'+inf.matches.join('、')+'”→ '+CATS[inf.catId].name+'；主取'+primary.sym+'（'+primary.role+'）'
+    :'未命中明确细类，主取时干为所测事，值符/值使为辅';
+  return{name,query,matchedCat:inf.catId,matches:inf.matches,reason,items};
+}
+
+/* 取某类别全部用神；custom 走可解释的择优分支。 */
+function take(R,catId,customQuery){
+  if(catId==='custom')return takeCustom(R,customQuery);
   const cat=CATS[catId];
   if(!cat)return null;
   const py=pillars(R);
@@ -238,8 +351,8 @@ function take(R,catId){
 }
 
 /* 简版：前 3 条用神一句话 */
-function brief(R,catId){
-  const t=take(R,catId);
+function brief(R,catId,customQuery){
+  const t=take(R,catId,customQuery);
   if(!t)return null;
   return t.items.slice(0,3).map(function(x){
     return x.sym+'('+x.role.slice(0,4)+')@'+(x.pal?x.pal+'宫':'—')+' '+x.rel;
@@ -346,5 +459,5 @@ function yingqi(R){
 
 const ALL=Object.keys(CATS);
 
-return{CATS,CAT_RULES,ALL,take,brief,relToDay,ganPal,doorPal,starPal,godPal,pillars,catRule,yingqi,wangshu};
+return{CATS,CAT_RULES,ALL,take,takeCustom,inferCustom,cleanCustomQuery,brief,relToDay,ganPal,doorPal,starPal,godPal,pillars,catRule,yingqi,wangshu};
 });

@@ -59,6 +59,35 @@ ck('C5 含日干=求测人',document.getElementById('ysName').textContent.includ
   renderYongshen(curR);
 })();
 
+/* ---------- D2. 自定义求测（智能取用，界面层） ---------- */
+(function(){
+  const g=id=>document.getElementById(id);
+  g('aiQ').value='这笔合同能不能签';
+  g('yCat').value='custom';
+  renderYongshen(curR);
+  ck('D4 自定义框出现且同步 aiQ',g('yCustomWrap').style.display!=='none'&&g('yCustom').value==='这笔合同能不能签',
+     '实际='+g('yCustom').value);
+  const t=YS.take(curR,'custom','这笔合同能不能签');
+  const rows=document.getElementById('ysBody').innerHTML.split('<tr>').length-1;
+  ck('D5 自定义行数与 take 一致',rows===t.items.length,'实际='+rows+'/'+t.items.length);
+  ck('D6 主用神=六合并有「主」标记',
+     document.getElementById('ysBody').innerHTML.includes('六合')&&document.getElementById('ysBody').innerHTML.includes('>主<'),
+     '实际='+document.getElementById('ysBody').innerHTML.slice(0,160));
+  ck('D7 速览带取用依据',document.getElementById('ysBrief').textContent.includes('命中'),
+     '实际='+document.getElementById('ysBrief').textContent);
+  /* AI 区改问事 → 自定义框同步（两处同一份文本，不各存一份） */
+  g('aiQ').value='今年能否升职';syncCustomQuestion('今年能否升职');
+  ck('D8 aiQ 改动同步自定义框并改主用神',
+     g('yCustom').value==='今年能否升职'&&document.getElementById('ysBody').innerHTML.includes('开门'),
+     '实际='+g('yCustom').value);
+  /* 切回固定类别：自定义框隐藏，行数回到该类别全表 */
+  g('yCat').value='qiucai';renderYongshen(curR);
+  ck('D9 切回固定类别隐藏自定义框',g('yCustomWrap').style.display==='none'&&
+     document.getElementById('ysBody').innerHTML.split('<tr>').length-1===7,
+     '实际='+g('yCustomWrap').style.display);
+  g('aiQ').value='';
+})();
+
 /* ---------- E. castTest 守卫（校验用局无日时干支，用神区不可用） ----------
    paipan 直出无 meta；castTest 以 {test:true,...} 渲染，curR=R 本身。
    renderYongshen 守卫 `!R.meta||R.meta.test` 对无 meta 的局同样短路。 */
