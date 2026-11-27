@@ -10,7 +10,7 @@
 
    版本号：改动静态资源清单时递增 CACHE，activate 里按白名单清旧缓存。
    ============================================================ */
-const CACHE = 'qimen-v6';  // 2026-11-27 模型清单改为 Gemini 4 Hydrogen / 3.8 Flash（app.js 变更），清旧缓存
+const CACHE = 'qimen-v7';  // 2026-11-27 恢复 DeepSeek 芯片、Gemini 用 4 Hydrogen / 3.8 Flash（app.js 变更），清旧缓存
 const ASSETS = [
   './',
   './index.html',

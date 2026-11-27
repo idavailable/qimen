@@ -783,16 +783,18 @@ let aiHist=[],aiCtrl=null,aiStates={},aiAborted=false; /* F6：停止标志位�
 const esc=escHtml;
 
 /* ---- 模型芯片（对齐 liuyao：后台 /api/models 驱动，可多选横向对比） ----
-   2026-11-27：内置清单收窄为 Gemini 4 Hydrogen + Gemini 3.8 Flash（不再列其它模型）；
+   2026-11-27：Gemini 侧 4 Hydrogen + 3.8 Flash（3.6 Flash 下线），DeepSeek 保留一个；
    静态列表只作 /api/models 拉取失败时的兜底，真实清单仍以服务端为准。 */
 const QM_MODELS_KEY='qm_models';
 const MODEL_TIPS={
-  'gemini-4-hydrogen':'旗舰效率','gemini-3.8-flash':'备选 · 高峰期稳'
+  'gemini-4-hydrogen':'旗舰效率','gemini-3.8-flash':'备选 · 高峰期稳',
+  'deepseek-flash':'V4.1 · 1017'
 };
-const DEFAULT_MODELS=['gemini-4-hydrogen','gemini-3.8-flash'];
+const DEFAULT_MODELS=['gemini-4-hydrogen','deepseek-flash'];
 let MODELS=[
   {id:'gemini-4-hydrogen',pv:'Google',label:'Gemini 4 Hydrogen',tip:'旗舰效率'},
-  {id:'gemini-3.8-flash',pv:'Google',label:'Gemini 3.8 Flash',tip:'备选 · 高峰期稳'}
+  {id:'gemini-3.8-flash',pv:'Google',label:'Gemini 3.8 Flash',tip:'备选 · 高峰期稳'},
+  {id:'deepseek-flash',pv:'DeepSeek',label:'DeepSeek V4.1 Flash',tip:'V4.1 · 1017'}
 ];
 function modelLabel(id){
   const p=String(id).split('-');

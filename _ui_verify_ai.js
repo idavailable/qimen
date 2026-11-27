@@ -100,7 +100,7 @@ g('aiMode').value='server';
 aiSyncMode();
 ck('I0 模型行可见 / BYOK 行隐藏',g('modelRow').style.display!=='none'&&g('byokRow').style.display==='none',
    'modelRow='+JSON.stringify(g('modelRow').style.display)+' byokRow='+JSON.stringify(g('byokRow').style.display));
-ck('I0b 默认选中 2 个模型芯片',selModels.length===2&&selModels.indexOf('gemini-4-hydrogen')>=0&&selModels.indexOf('gemini-3.8-flash')>=0,
+ck('I0b 默认选中 2 个模型芯片',selModels.length===2&&selModels.indexOf('gemini-4-hydrogen')>=0&&selModels.indexOf('deepseek-flash')>=0,
    '实际='+JSON.stringify(selModels));
 __fetches.length=0;
 await aiRun();
@@ -110,7 +110,7 @@ const f1=__fetches[0];
 ck('I2 body 含 pan/cat/question/history',!!f1.body.pan&&!!f1.body.cat&&f1.body.question==='这笔订单该不该签'&&Array.isArray(f1.body.history));
 ck('I3 服务端模式下问事不并进 pan',f1.body.pan.indexOf('【所问何事】')<0);
 ck('I4 未填密钥时不带 base/key',f1.body.base===undefined&&f1.body.key===undefined,'实际='+JSON.stringify(Object.keys(f1.body)));
-ck('I4b 每个请求带各自模型名',__fetches.map(f=>f.body.model).sort().join('|')==='gemini-3.8-flash|gemini-4-hydrogen','实际='+__fetches.map(f=>f.body.model).sort().join('|'));
+ck('I4b 每个请求带各自模型名',__fetches.map(f=>f.body.model).sort().join('|')==='deepseek-flash|gemini-4-hydrogen','实际='+__fetches.map(f=>f.body.model).sort().join('|'));
 ck('I5 各模型列均收到流式正文',Object.keys(aiStates).length===2&&
    Object.keys(aiStates).every(m=>aiStates[m].history.some(h=>h.content==='一、盘面要点：值符落宫，用神生克。')),
    '实际='+JSON.stringify(Object.keys(aiStates)));
@@ -144,7 +144,7 @@ fetch=oldFetch2;
 
 /* I14 模型芯片渲染 / 单选 / 后台清单覆盖 / 拉取失败兜底 */
 renderModelChips();
-ck('I14 芯片含内置模型',g('modelChips').innerHTML.includes('gemini-4-hydrogen')&&g('modelChips').innerHTML.includes('gemini-3.8-flash'));
+ck('I14 芯片含内置模型',g('modelChips').innerHTML.includes('gemini-4-hydrogen')&&g('modelChips').innerHTML.includes('gemini-3.8-flash')&&g('modelChips').innerHTML.includes('deepseek-flash'));
 g('aiBase').value='';g('aiModel').value='';g('aiKey').value=''; /* 清掉 BYOK，回到服务端密钥模式 */
 selModels=['gemini-3.8-flash'];
 __fetches.length=0;

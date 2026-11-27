@@ -84,7 +84,7 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `DEEPSEEK_API_KEY` | secret | DeepSeek 密钥；配了则 `deepseek-*` 模型可用 |
 | `GEMINI_BASE_URL` | 文本变量 | 默认 `https://generativelanguage.googleapis.com/v1beta/openai`；数据中心 IP 被拒时可改接 CF AI Gateway |
 | `DEEPSEEK_BASE_URL` | 文本变量 | 默认 `https://api.deepseek.com/v1` |
-| `QM_PROVIDER` | 文本变量 | 请求未指定模型时的默认供应商；**默认 `gemini`**（内置清单只有 Gemini 两型），设 `deepseek` 时仍走 `DEEPSEEK_*` |
+| `QM_PROVIDER` | 文本变量 | 请求未指定模型时的默认供应商（`deepseek` / `gemini`），**默认 `deepseek`** |
 | `CUSTOM_PROVIDERS` | 文本变量 | JSON 数组，后台加供应商无需改代码：`[{"id":"kimi","label":"Moonshot","base":"https://api.moonshot.cn/v1","models":["kimi-k2"]}]`，密钥为 `<ID大写>_API_KEY` |
 | `QM_API_KEY` / `QM_BASE_URL` / `QM_MODEL` | secret / 变量 | 通用兜底（未走上面几家时使用） |
 | `RATE_LIMIT_PER_MIN` | 文本变量 | 每 IP 每分钟上限；**不设 = 不限流** |
@@ -92,15 +92,16 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `QM_ALLOW_NULL_ORIGIN` | 文本变量 | 设 `1` 才放行 `Origin: null`。默认拒绝——`null` 同时也是 sandbox iframe 的 Origin，默认放行等于把 IP 隔离的记录暴露给任意页面 |
 | `QM_RETRY_WAIT_MS` | 文本变量 | Gemini 重试间隔毫秒数；默认 `10000`（10 秒）。调小仅用于测试 |
 | `QM_GEMINI_MODELS` / `QM_DEEPSEEK_MODELS` | 文本变量 | 覆盖同族**递推顺序**（逗号分隔，书写顺序即试的顺序）；不设则用内置清单 |
-| `GEMINI_MODEL` / `DEEPSEEK_MODEL` | 文本变量 | 该家默认模型；设在则自动排在递推链最前。不设时 Gemini 默认 `gemini-4-hydrogen` |
+| `GEMINI_MODEL` / `DEEPSEEK_MODEL` | 文本变量 | 该家默认模型；设在则自动排在递推链最前。不设时 Gemini 默认 `gemini-4-hydrogen`、DeepSeek 默认 `deepseek-flash` |
 | `ACCESS_CODE` | secret | 管理口令：`/api/records`、`/api/saves` 的全量查询（`?all=1`）、越权删除、清空校验；未设则一律禁止。**也是跨设备读档的钥匙**——前端存档面板填该口令并勾选「读全部」，即可换网络/换电脑读到全部云端存档 |
 
 模型清单由 `GET /api/models` 动态返回（按密钥是否配置标注可用性），前端渲染成**可多选的模型芯片**，
 选中几个就并行解读几个、横向对比。后台增删供应商/密钥后刷新页面即可，不用改代码。
 
-**内置清单（2026-11-27 起）只有两种**：`gemini-4-hydrogen`（默认首选）与 `gemini-3.8-flash`（备选）。
-同族递推顺序即清单顺序：4 Hydrogen 失败 → 3.8 Flash。DeepSeek 不再出现在芯片上；
-需要别家模型请用 `CUSTOM_PROVIDERS`（后台配置后自动上芯片），或前端直连 BYOK。
+**内置清单（2026-11-27 起）三种**：`gemini-4-hydrogen`、`gemini-3.8-flash`、`deepseek-flash`。
+Gemini 侧只保留 4 Hydrogen 与 3.8 Flash（3.6 Flash 下线）；DeepSeek 保留一个，芯片上三家可并排对比。
+同族递推顺序即清单顺序：Gemini 族 4 Hydrogen 失败 → 3.8 Flash（DeepSeek 族只有一项，无递推）；
+仍**不跨家**。别家模型请用 `CUSTOM_PROVIDERS`（后台配置后自动上芯片），或前端直连 BYOK。
 
 ## D1
 
@@ -230,11 +231,11 @@ node _smoke_p23.js # 75 项 P2-3 冒烟（翻局回放含流派配置 + 复盘�
 
 **验证**：`test.js` **569/0**（新增 31.14–31.18）· 沙箱 **128/0** · jsdom 复核 **10/0** · P1-3 冒烟 **42/0** · P2-2 冒烟 **23/0** · P2-3 冒烟 **75/0**。
 
-## 2026-11-27 第十三轮（模型清单收窄 + 全量审计）
+## 2026-11-27 第十三轮（Gemini 型号替换 + 全量审计）
 
 | 项 | 做法 |
 |---|---|
-| 内置模型 | 只保留 `gemini-4-hydrogen`（默认首选）与 `gemini-3.8-flash`（备选），移除 `gemini-3.6-flash` / `deepseek-flash` 芯片；`/api/models` 的 `defaultModel`、`QM_PROVIDER` 默认值同步改为 Gemini；同族递推链为 4 Hydrogen → 3.8 Flash。供应商路由代码保留，BYOK 与 `CUSTOM_PROVIDERS` 仍可接别家 |
+| 内置模型 | Gemini 侧换为 `gemini-4-hydrogen` 与 `gemini-3.8-flash`（`gemini-3.6-flash` 下线），`deepseek-flash` **保留**；`/api/models` 的 `defaultModel` 与 `QM_PROVIDER` 默认值仍为 DeepSeek（只配 Gemini key 时自动回落到 `gemini-4-hydrogen`）；Gemini 同族递推 4 Hydrogen → 3.8 Flash |
 
 | 编号 | 级别 | 问题 | 修复 |
 |---|---|---|---|
@@ -244,7 +245,8 @@ node _smoke_p23.js # 75 项 P2-3 冒烟（翻局回放含流派配置 + 复盘�
 | A4 | P2 | 点「停止」时 abort 异常落到各列，列内叠红字「失败：The operation was aborted.」，与状态栏「已停止」矛盾 | 主动停止只保留已收到的正文，不写失败提示 |
 | A5 | P3 | 上游 429 被统一折成 502，前端无法区分限流与网关故障 | 429 原样回传，文案点明「上游限流」 |
 | A6 | P2（测试） | `_ui_verify_ai.js` 的 `ck(name,cond)` 是布尔式，但 6 处按 `(actual, expected)` 传参——第二个参数为字符串，断言恒真（H11/H13/H14/H18/H19/I4b） | 改为显式 `===` 比较；沙箱断言数 128 → 141（新增 N 组 7 项） |
-| A7 | P3 | 静态资源改动未 bump SW 缓存与 `?v=`，老用户首次打开仍跑旧 app.js | `qimen-v6` + `?v=20261127` |
+| A7 | P3 | 静态资源改动未 bump SW 缓存与 `?v=`，老用户首次打开仍跑旧 app.js | `qimen-v7` + `?v=20261127b` |
+| A8 | P3 | `QM_PROVIDER` / `*_MODEL` 指向清单外 id 时 `defaultModel` 照原样下发，前端会选中一个不存在的模型 | `defaultModel` 增加「必须在清单内」判定，清单外回落到首个已配/首个模型 |
 
 核对为正确、未改动：CORS 白名单与 `Origin: null` 默认拒绝、BYOK SSRF 五类拦截、D1 按 `ip_hash` 隔离与常量时间口令、SSE 双守卫、思考链剥离、排盘主链（拆补/置闰/茅山、转盘/飞盘、寄宫、旬空驿马）抽样复核未见偏差。
 

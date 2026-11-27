@@ -208,12 +208,12 @@ function customProviderWarnings(env) {
 function norm(base) { return String(base || '').replace(/\/+$/, ''); }
 
 /* ---------- 内置模型清单（models.js 与同族回落链共用同一份，避免两处漂移） ----------
-   2026-11-27：按用户要求只保留 Gemini 4 Hydrogen 与 Gemini 3.8 Flash 两个内置模型
-   （DeepSeek 不再上芯片；供应商路由代码仍保留，后台 CUSTOM_PROVIDERS / BYOK 不受影响）。
-   顺序即同族递推顺序：4 Hydrogen 失败 → 3.8 Flash。 */
+   2026-11-27：Gemini 侧换成 4 Hydrogen + 3.8 Flash（3.6 Flash 下线），DeepSeek 保留一个。
+   顺序即同族递推顺序：4 Hydrogen 失败 → 3.8 Flash（DeepSeek 族只有一项，无递推）。 */
 const BUILTIN_MODELS = [
   { id: 'gemini-4-hydrogen', pv: 'Google' },
-  { id: 'gemini-3.8-flash', pv: 'Google' }
+  { id: 'gemini-3.8-flash', pv: 'Google' },
+  { id: 'deepseek-flash', pv: 'DeepSeek' }
 ];
 
 /* 模型 id → 展示名：gemini-4-hydrogen → Gemini 4 Hydrogen */
@@ -307,7 +307,7 @@ function resolveProvider(env, body) {
   }
   /* ④ 兜底：默认 provider → 任一已配 → 通用 QM_* */
   /* F3：回落到别家供应商时必须换用该家的模型名——把 gemini 的模型名原样发给 deepseek 必然上游 400 */
-  const def = String(env.QM_PROVIDER || 'gemini').toLowerCase();
+  const def = String(env.QM_PROVIDER || 'deepseek').toLowerCase();
   if (def === 'gemini' && env.GEMINI_API_KEY) {
     return {
       base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),

@@ -1255,20 +1255,20 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   const CP=JSON.stringify([{id:'kimi',label:'Moonshot',base:'https://api.moonshot.cn/v1',models:['kimi-k2']}]);
 
   let mj=await (await fm.handle(mkReqM(),{})).json();
-  ck('28.1 内置模型只剩 Gemini 两种（4 Hydrogen / 3.8 Flash）',mj.models.map(m=>m.id).join(','),'gemini-4-hydrogen,gemini-3.8-flash');
+  ck('28.1 内置模型三个：4 Hydrogen / 3.8 Flash / DeepSeek Flash',mj.models.map(m=>m.id).join(','),'gemini-4-hydrogen,gemini-3.8-flash,deepseek-flash');
   ck('28.2 无密钥时 configured 全 false',mj.models.every(m=>m.configured===false),true);
   ck('28.3 无密钥时给出告警',(mj.warnings||[]).some(w=>w.indexOf('未配置密钥')>=0),true);
   mj=await (await fm.handle(mkReqM(),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d'})).json();
   ck('28.4 配密钥后 configured 全 true',mj.models.every(m=>m.configured===true),true);
   ck('28.5 配齐后无告警',(mj.warnings||[]).length,0);
-  ck('28.6 defaultModel=gemini-4-hydrogen',mj.defaultModel,'gemini-4-hydrogen');
+  ck('28.6 defaultModel=deepseek-flash（默认供应商仍是 deepseek）',mj.defaultModel,'deepseek-flash');
   /* F27：只配了 Gemini 密钥时，defaultModel 不能仍指向未配 key 的 deepseek-flash */
   mj=await (await fm.handle(mkReqM(),{GEMINI_API_KEY:'g'})).json();
   ck('28.6b 仅配 Gemini → defaultModel 指向已配模型',/^gemini/i.test(mj.defaultModel),true,mj.defaultModel);
   ck('28.6c 仅配 Gemini → 默认模型确实是已配 key 的那个',mj.models.filter(m=>m.id===mj.defaultModel)[0].configured,true);
-  /* 2026-11-27：QM_PROVIDER=deepseek 时 prefer 不在内置清单里，不能当下发默认值 */
-  mj=await (await fm.handle(mkReqM(),{QM_PROVIDER:'deepseek',DEEPSEEK_API_KEY:'d'})).json();
-  ck('28.6d 清单外的 prefer 不得作 defaultModel',mj.defaultModel,'gemini-4-hydrogen');
+  /* 2026-11-27：DEEPSEEK_MODEL 指向清单外 id 时，不能把它当 defaultModel 下发 */
+  mj=await (await fm.handle(mkReqM(),{DEEPSEEK_MODEL:'deepseek-v9',DEEPSEEK_API_KEY:'d'})).json();
+  ck('28.6d 清单外的 prefer 不得作 defaultModel',mj.defaultModel,'deepseek-flash');
   mj=await (await fm.handle(mkReqM(),{CUSTOM_PROVIDERS:CP})).json();
   ck('28.7 自定义供应商进入清单',mj.models.some(m=>m.id==='kimi-k2'&&m.pv==='Moonshot'),true);
   ck('28.8 自定义供应商缺密钥 → 告警',(mj.warnings||[]).some(w=>w.indexOf('KIMI_API_KEY')>=0),true);
@@ -1292,7 +1292,7 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   pv=rp({CUSTOM_PROVIDERS:CP,KIMI_API_KEY:'kk'},{model:'kimi-k2'});
   ck('28.16 自定义供应商命中',pv.base==='https://api.moonshot.cn/v1'&&pv.from==='kimi',true,JSON.stringify(pv));
   ck('28.17 全无密钥 → null',rp({},{model:'deepseek-flash'}),null);
-  ck('28.18 未指定模型 → 默认 Gemini（内置清单已无别家）',rp(env2,{}).from,'gemini');
+  ck('28.18 未指定模型 → 默认 deepseek',rp(env2,{}).from,'deepseek');
   ck('28.19 QM_PROVIDER=gemini 生效',rp({GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_PROVIDER:'gemini'},{}).from,'gemini');
   ck('28.20 BYOK 优先于服务端密钥',rp(env2,{base:'https://b/v1',model:'m',key:'k'}).from,'byok');
 
