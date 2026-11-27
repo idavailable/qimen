@@ -352,15 +352,27 @@ async function renderSaves(){
   if(err)setSavesMsg('云端口令查询失败：'+err);
   else if(all&&!code)setSavesMsg('已勾选「读全部」，请先填管理口令');
   else setSavesMsg(all?('全量云端存档 · '+cloud.length+' 条'):'');
-  /* 云端与本地按四柱+日期时间去重（同一局可能存过两边）
+  /* 云端与本地按「起局全参数」去重（同一局可能存过两边）
      五轮（2026-10-24）：键补流派三键与问事类别——同一时刻起的不同流派/不同类别是
-     不同局，旧键会把它们并成一条，列表直接少条目 */
-  const seen=new Set(),rows=[];
-  cloud.concat(local).forEach(s=>{
-    /* F26：params 缺失/字段不全时不能拼出 "undefined undefined …" 这种假键（会把不同存档并成一条） */
+     不同局，旧键会把它们并成一条，列表直接少条目。
+     2026-11-27：① 键补 clock（真太阳时/北京时间同一钟面是两盘，漏了会并成一条）；
+                 ② **本机行优先**——旧版 cloud.concat(local) 让云端行先入列，同局的本机行
+                 被丢掉，于是「当时的 AI 解读」快照与事后回填在线上环境永远看不到；
+                 云端同局只把 cloudId 补到本机行，删除时一起清。 */
+  const keyOf=s=>{
     const p=s.params||{};
-    const k=(p.date||p.time)?([p.date,p.time,p.lon,p.ji,p.pan,p.method,p.tq,p.cat].join(' ')):s.id;
-    if(seen.has(k))return;seen.add(k);rows.push(s);
+    /* F26：params 缺失/字段不全时不能拼出 "undefined undefined …" 这种假键 */
+    return (p.date||p.time)?([p.date,p.time,p.lon,p.clock,p.ji,p.pan,p.method,p.tq,p.cat].join(' ')):s.id;
+  };
+  const rows=[],idx=new Map();
+  local.concat(cloud).forEach(s=>{
+    const k=keyOf(s);
+    if(idx.has(k)){
+      const cur=rows[idx.get(k)];
+      if(cur.src==='local'&&s.src==='cloud'&&cur.cloudId===undefined)cur.cloudId=s.cloudId;
+      return;
+    }
+    idx.set(k,rows.length);rows.push(s);
   });
   if(!rows.length){el.innerHTML='<div style="font-size:12px;color:var(--muted)">暂无存档 —— 起局后点「存档」即可保存</div>';return;}
   el.innerHTML=rows.map(s=>{
@@ -368,7 +380,7 @@ async function renderSaves(){
     return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid var(--line);font-size:12px">
       <span style="cursor:pointer;flex:1" onclick="loadSave('${s.id}')" title="点击恢复盘面">
         <b>${escHtml(s.label)}</b>
-        ${s.src==='cloud'?'<span class="chip zhong" style="margin:0 4px;position:static">云</span>':'<span class="chip zhong" style="margin:0 4px;position:static">本</span>'}
+        ${s.src==='cloud'?'<span class="chip zhong" style="margin:0 4px;position:static">云</span>':'<span class="chip zhong" style="margin:0 4px;position:static">本</span>'+(s.cloudId!==undefined?'<span class="chip zhong" style="margin:0 4px;position:static">云</span>':'')}
         ${s.feedback?'<span class="chip zhong" style="margin:0 4px;position:static">'+(s.verified==='yes'?'应验':s.verified==='no'?'未应验':'已回填')+'</span>':''}
         <span style="color:var(--muted)">${escHtml(t)}${s.params&&s.params.q?' · '+escHtml(s.params.q.slice(0,30)):''} · ${escHtml(s.created_at)}</span>
       </span>
@@ -397,15 +409,24 @@ async function loadSave(id){
 }
 async function delSave(id){
   if(id[0]==='L'){
-    let saves=localSaves().filter(x=>x.id!==id);
-    try{localStorage.setItem(SAVE_KEY,JSON.stringify(saves));}catch(e){}
+    const all=localSaves();
+    const it=all.find(x=>x.id===id);
+    try{localStorage.setItem(SAVE_KEY,JSON.stringify(all.filter(x=>x.id!==id)));}catch(e){}
+    /* 2026-11-27：同一局已同步到云端（cloudId）时连云端行一起删——
+       只删本机的话，下次刷新云端行又会冒出来，用户以为「删不掉」。
+       本网络自己的行本不需要口令；填了口令也无害（不匹配则按 ip_hash 删）。 */
+    if(it&&it.cloudId!==undefined){
+      const opts={method:'DELETE'};
+      if(savesCode())opts.headers={'X-Access-Code':savesCode()};
+      try{await fetch('/api/saves?id='+Number(it.cloudId),opts);}catch(e){}
+    }
   }else{
     const cid=Number(id.slice(1));
     const row=(lastCloud||[]).find(x=>x.id===id);
     /* 跨网络（全量列表）的存档只有管理口令能删；本网络的存档不带口令 */
     const code=savesCode();
     const opts={method:'DELETE'};
-    if(row&&row.admin&&code)opts.headers={'X-Access-Code':code};
+    if((row&&row.admin&&code)||(!row&&code))opts.headers={'X-Access-Code':code};
     try{await fetch('/api/saves?id='+cid,opts);}catch(e){}
   }
   renderSaves();
@@ -730,11 +751,11 @@ function render(R,m){
       <b>M2 格局库</b>：十干克应 81 格全表（依据权威对照页逐条校正，如庚壬=上格、庚癸=大格、辛壬=凶蛇入狱、壬癸=幼女奸淫）· 三奇应克八宫表 · 九遁（天/地/人/神/鬼/风/云/龙/虎）· 三奇得使 · 玉女守门 · 三奇贵人升殿 · 伏吟反吟（全盘统计）· 六仪击刑 · 三奇入墓 · 门迫/门受制 · 五不遇时<br>
       <b>M3 用神取法</b>：yongshen.js 独立模块 —— 10 大类问事用神表（经营求财/工作求职/恋爱婚姻/疾病/官司/出行/失物/天气/房产/考试）· 日干=求测人、时干=所问事 · 每条用神归约到落宫 + 与日干宫生克（按落宫五行）· 界面「五、问事用神」联动展示 ·
       <b>自定义求测（智能取用）</b>：按所问文本识别事项并择优取用（合同→六合/景门、升职→开门/值符/年干、下雨→天柱等），日干/时干固定为人/事两轴，最多再取 5 个高相关符号；<b>只按事项相关度择优，不按落宫吉凶挑选</b>，未命中细类如实退回日干/时干 + 值符/值使<br>
-      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 595 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **甲取旬按本柱旬（日干≠时干口径）** / **立春真实时刻为界的干支年** / 节气基准解耦 / **历法锚点 72 节气+8 日柱（对 lunar-javascript 全量交叉校验）** / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推** / **分页参数 NaN 守卫** / **P1-3 流派配置：飞盘算例四源一致逐宫比对、置闰康熙五十七算例、茅山 2027-12 算例** / **五轮：云端存档保留流派、旺衰五态、留痕限长**）全部通过，另加浏览器沙箱 128 项 + jsdom 复核 10 项 + P1-3 渲染冒烟 42 项 + P2-2 PWA/分享冒烟 23 项<br><br>
+      <b>质量保障</b>：engine.js / yongshen.js / prompt.js / interpret.js 与界面同源；node test.js 回归 597 项（池纪句解三例 / 1080 局不变式 / 寄宫专项 / 旬空驿马落宫 / 克应表 81 格 / 天遁识别 / 用神取法 / **甲取旬按本柱旬（日干≠时干口径）** / **立春真实时刻为界的干支年** / 节气基准解耦 / **历法锚点 72 节气+8 日柱（对 lunar-javascript 全量交叉校验）** / M4 流式 / Functions 服务端 / **Gemini 重试与同族递推** / **分页参数 NaN 守卫** / **P1-3 流派配置：飞盘算例四源一致逐宫比对、置闰康熙五十七算例、茅山 2027-12 算例** / **五轮：云端存档保留流派、旺衰五态、留痕限长**）全部通过，另加浏览器沙箱 141 项 + jsdom 复核 10 项 + P1-3 渲染冒烟 42 项 + P2-2 PWA/分享冒烟 23 项<br><br>
       <b>M4 AI 流式解读</b>：盘面 + 格局 + 用神拼成提示词（四段契约：盘面事实不可改写 / 主次次序 / 追问沿用原盘 / 现实边界，对齐 liuyao interpret.js）·
       两种接入方式 —— <b>服务端代理</b>（线上默认，走本站 <code>/api/interpret</code>，密钥留服务端、解读写入 D1）与 <b>前端直连</b>（本地双击默认，密钥存 localStorage、不经中间服务器）·
       非流式 JSON 兜底 · SSE 双守卫（单行溢出 / 正文 20 万字溢出）· 多轮追问沿用原盘 · 无密钥时「复制盘面提示词」降级 ·
-      <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次；仍不通则<b>在 Gemini 家族内依次递推</b>（如 3.8 Flash → 3.6 Flash），全族试完才报错，<b>不会跨到别家模型</b>；重试与递推进度在该列实时显示 ·
+      <b>Gemini 单独策略</b>（高峰期通道易 503）：首次失败后每 10 秒重试一次、共 2 次；仍不通则<b>在 Gemini 家族内依次递推</b>（如 4 Hydrogen → 3.8 Flash），全族试完才报错，<b>不会跨到别家模型</b>；重试与递推进度在该列实时显示 ·
       多模型列<b>等高并各自出滚动条</b>、输出时自动跟随底部 · 模型思考链（reasoning / <code>&lt;think&gt;</code>）一律不入正文、不进追问历史<br>
       <b>盘面存档</b>：本地存 localStorage、线上同步 D1（默认按<b>本网络</b>隔离，他人不可见）· 面板填<b>管理口令</b>并勾选「读全部」即可<b>跨网络 / 跨设备</b>列出全部云端存档并读档（服务端 <code>?all=1</code> + <code>X-Access-Code</code> 头能力）· 读档时下拉值按选项白名单回退，不会因旧档值非法而把选择框置空<br>
       <b>P2-2 PWA 与分享</b>：manifest + Service Worker 离线缓存（<code>/api/</code> 永不缓存、只拦同源 GET）· 起局参数编成 <code>#p=</code> base64url 链接（UTF-8 安全），打开即还原并自动起局 · http(s) 才注册 SW，本地双击 <code>file://</code> 自动跳过<br>
@@ -761,17 +782,17 @@ let aiHist=[],aiCtrl=null,aiStates={},aiAborted=false; /* F6：停止标志位�
 /* F18：esc 与 escHtml 本为同一份转义，统一引用避免两份并存 */
 const esc=escHtml;
 
-/* ---- 模型芯片（对齐 liuyao：后台 /api/models 驱动，可多选横向对比） ---- */
+/* ---- 模型芯片（对齐 liuyao：后台 /api/models 驱动，可多选横向对比） ----
+   2026-11-27：内置清单收窄为 Gemini 4 Hydrogen + Gemini 3.8 Flash（不再列其它模型）；
+   静态列表只作 /api/models 拉取失败时的兜底，真实清单仍以服务端为准。 */
 const QM_MODELS_KEY='qm_models';
 const MODEL_TIPS={
-  'gemini-3.6-flash':'快','gemini-3.8-flash':'高峰期易过载',
-  'deepseek-flash':'V4.1 · 1017'
+  'gemini-4-hydrogen':'旗舰效率','gemini-3.8-flash':'备选 · 高峰期稳'
 };
-const DEFAULT_MODELS=['gemini-3.8-flash','deepseek-flash'];
+const DEFAULT_MODELS=['gemini-4-hydrogen','gemini-3.8-flash'];
 let MODELS=[
-  {id:'gemini-3.6-flash',pv:'Google',label:'Gemini 3.6 Flash',tip:'快'},
-  {id:'gemini-3.8-flash',pv:'Google',label:'Gemini 3.8 Flash',tip:'高峰期易过载'},
-  {id:'deepseek-flash',pv:'DeepSeek',label:'DeepSeek V4.1 Flash',tip:'V4.1 · 1017'}
+  {id:'gemini-4-hydrogen',pv:'Google',label:'Gemini 4 Hydrogen',tip:'旗舰效率'},
+  {id:'gemini-3.8-flash',pv:'Google',label:'Gemini 3.8 Flash',tip:'备选 · 高峰期稳'}
 ];
 function modelLabel(id){
   const p=String(id).split('-');
@@ -1098,9 +1119,14 @@ async function aiRun(){
           flushCol(m);
           okN++;
         }catch(e){
-          lastErr=(e&&e.message)?e.message:String(e);
+          /* 2026-11-27：用户点「停止」时 abort 会以异常形式落到每一列，
+             旧版在列内叠一行红字「失败：The operation was aborted.」，与状态栏
+             「已停止」互相矛盾。主动停止只保留已收到的正文，不写失败提示。 */
+          const aborted=aiAborted||(aiCtrl&&aiCtrl.signal&&aiCtrl.signal.aborted);
           phase[m]='stream';
           flushCol(m);   /* 先刷新已收到的部分正文，再叠失败信息 */
+          if(aborted){lastErr='已停止';return;}
+          lastErr=(e&&e.message)?e.message:String(e);
           const el=aiColBody(m);
           if(el)el.innerHTML+='<span style="color:#A32D2D">失败：'+esc(lastErr)+'</span>';
         }

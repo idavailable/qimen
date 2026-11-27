@@ -45,11 +45,11 @@ g('aiKey').value='sk-test';
 g('aiQ').value='这笔订单该不该签';
 aiClearHist();
 await aiRun();
-ck('H11 流式输出正确拼接',aiColBody('front').textContent,'一、盘面要点：值符落宫，用神生克。');
+ck('H11 流式输出正确拼接',aiColBody('front').textContent==='一、盘面要点：值符落宫，用神生克。','实际='+aiColBody('front').textContent);
 ck('H12 完成后状态提示',g('aiStatus').textContent.includes('完成'));
-ck('H13 URL 拼装（末尾斜杠归一）',__fetches[__fetches.length-1].url,'https://api.example.com/v1/chat/completions');
+ck('H13 URL 拼装（末尾斜杠归一）',__fetches[__fetches.length-1].url==='https://api.example.com/v1/chat/completions','实际='+__fetches[__fetches.length-1].url);
 const b1=__fetches[__fetches.length-1].body;
-ck('H14 body 首条为 system 提示词',b1.messages[0].role,'system');
+ck('H14 body 首条为 system 提示词',b1.messages[0].role==='system','实际='+b1.messages[0].role);
 ck('H15 body 盘面含补充问事',b1.messages[1].content.includes('【所问何事】这笔订单该不该签'));
 ck('H16 body stream=true 且模型正确',b1.stream===true&&b1.model==='test-model');
 ck('H17 配置已存 localStorage',!!localStorage.getItem('qmi_cfg_v1'));
@@ -57,8 +57,8 @@ ck('H17 配置已存 localStorage',!!localStorage.getItem('qmi_cfg_v1'));
 /* H18 多轮：历史带上一轮 user/assistant */
 await aiRun();
 const b2=__fetches[__fetches.length-1].body;
-ck('H18 第二轮带历史（4 条）',b2.messages.length,4);
-ck('H19 第二轮首条仍是 system',b2.messages[0].role,'system');
+ck('H18 第二轮带历史（4 条）',b2.messages.length===4,'实际='+b2.messages.length);
+ck('H19 第二轮首条仍是 system',b2.messages[0].role==='system','实际='+b2.messages[0].role);
 ck('H20 第二轮沿用原盘（历史已由 H18 校验，此处校验输出仍在）',aiColBody('front').textContent.length>0);
 
 /* H21 停止 */
@@ -100,7 +100,7 @@ g('aiMode').value='server';
 aiSyncMode();
 ck('I0 模型行可见 / BYOK 行隐藏',g('modelRow').style.display!=='none'&&g('byokRow').style.display==='none',
    'modelRow='+JSON.stringify(g('modelRow').style.display)+' byokRow='+JSON.stringify(g('byokRow').style.display));
-ck('I0b 默认选中 2 个模型芯片',selModels.length===2&&selModels.indexOf('gemini-3.8-flash')>=0&&selModels.indexOf('deepseek-flash')>=0,
+ck('I0b 默认选中 2 个模型芯片',selModels.length===2&&selModels.indexOf('gemini-4-hydrogen')>=0&&selModels.indexOf('gemini-3.8-flash')>=0,
    '实际='+JSON.stringify(selModels));
 __fetches.length=0;
 await aiRun();
@@ -110,7 +110,7 @@ const f1=__fetches[0];
 ck('I2 body 含 pan/cat/question/history',!!f1.body.pan&&!!f1.body.cat&&f1.body.question==='这笔订单该不该签'&&Array.isArray(f1.body.history));
 ck('I3 服务端模式下问事不并进 pan',f1.body.pan.indexOf('【所问何事】')<0);
 ck('I4 未填密钥时不带 base/key',f1.body.base===undefined&&f1.body.key===undefined,'实际='+JSON.stringify(Object.keys(f1.body)));
-ck('I4b 每个请求带各自模型名',__fetches.map(f=>f.body.model).sort().join('|'),'deepseek-flash|gemini-3.8-flash');
+ck('I4b 每个请求带各自模型名',__fetches.map(f=>f.body.model).sort().join('|')==='gemini-3.8-flash|gemini-4-hydrogen','实际='+__fetches.map(f=>f.body.model).sort().join('|'));
 ck('I5 各模型列均收到流式正文',Object.keys(aiStates).length===2&&
    Object.keys(aiStates).every(m=>aiStates[m].history.some(h=>h.content==='一、盘面要点：值符落宫，用神生克。')),
    '实际='+JSON.stringify(Object.keys(aiStates)));
@@ -124,7 +124,7 @@ __fetches.length=0;
 await aiRun();
 const f2=__fetches[__fetches.length-1];
 ck('I9 服务端模式残留 byok 不随请求发送（F7）',f2.body.base===undefined&&f2.body.key===undefined&&
-   f2.body.model==='deepseek-flash','实际='+JSON.stringify([f2.body.base,f2.body.model,f2.body.key]));
+   f2.body.model===selModels[selModels.length-1],'实际='+JSON.stringify([f2.body.base,f2.body.model,f2.body.key]));
 ck('I10 第二轮带上一轮历史',__fetches.every(f=>Array.isArray(f.body.history)&&f.body.history.length===2),'实际='+JSON.stringify(__fetches.map(f=>f.body.history.length)));
 
 /* I11 auto 模式判定：线上 https → server；本地 file → front */
@@ -144,21 +144,21 @@ fetch=oldFetch2;
 
 /* I14 模型芯片渲染 / 单选 / 后台清单覆盖 / 拉取失败兜底 */
 renderModelChips();
-ck('I14 芯片含内置模型',g('modelChips').innerHTML.includes('gemini-3.8-flash')&&g('modelChips').innerHTML.includes('deepseek-flash'));
+ck('I14 芯片含内置模型',g('modelChips').innerHTML.includes('gemini-4-hydrogen')&&g('modelChips').innerHTML.includes('gemini-3.8-flash'));
 g('aiBase').value='';g('aiModel').value='';g('aiKey').value=''; /* 清掉 BYOK，回到服务端密钥模式 */
-selModels=['deepseek-flash'];
+selModels=['gemini-3.8-flash'];
 __fetches.length=0;
 await aiRun();
-ck('I15 单选模型只发一次请求',__fetches.length===1&&__fetches[0].body.model==='deepseek-flash','实际='+__fetches.length+' / '+JSON.stringify(__fetches.map(f=>f.body.model)));
+ck('I15 单选模型只发一次请求',__fetches.length===1&&__fetches[0].body.model==='gemini-3.8-flash','实际='+__fetches.length+' / '+JSON.stringify(__fetches.map(f=>f.body.model)));
 applyModels([{id:'gemini-3.8-flash',pv:'Google',configured:true},{id:'kimi-k2',pv:'Moonshot',configured:false}]);
 ck('I16 后台清单覆盖内置清单',MODELS.length===2&&MODELS[1].id==='kimi-k2'&&MODELS[1].tip==='后台未配 key','实际='+JSON.stringify(MODELS.map(m=>m.id+':'+m.tip)));
-ck('I17 清单变更后已选模型取交集（不丢不越）',selModels.indexOf('deepseek-flash')<0&&selModels.length>=1,'实际='+JSON.stringify(selModels));
+ck('I17 清单变更后已选模型取交集（不丢不越）',selModels.indexOf('gemini-4-hydrogen')<0&&selModels.length>=1,'实际='+JSON.stringify(selModels));
 const oldF3=fetch;
 fetch=function(){return Promise.resolve({ok:false,status:500,headers:{get:()=>'application/json'},text:()=>Promise.resolve('x'),json:()=>Promise.resolve({})});};
 await loadModels();
 ck('I18 清单拉取失败给出可见告警',g('modelWarn').textContent.includes('未能读取后台模型清单'),'实际='+g('modelWarn').textContent);
 fetch=oldF3;
-selModels=['gemini-3.8-flash','deepseek-flash'];
+selModels=['gemini-4-hydrogen','gemini-3.8-flash'];
 g('aiMode').value='auto';
 
 /*  · 存档 / 读档 ================= */
@@ -340,7 +340,7 @@ ck('K11 正常收流不误报截断',aiColBody('gemini-3.8-flash').textContent==
    '实际='+JSON.stringify(aiColBody('gemini-3.8-flash').textContent));
 
 fetch=oldFetchK;
-selModels=['gemini-3.8-flash','deepseek-flash'];
+selModels=['gemini-3.8-flash','gemini-4-hydrogen'];
 g('aiMode').value='auto';
 
 /* · L 组：跨设备读档（管理口令入口） ================= */
@@ -466,4 +466,50 @@ g('aiMode').value='auto';
      mdCol.innerHTML==='<p>一、盘面要点：值符落宫，用神生克。</p>',
      '实际 textContent='+JSON.stringify(mdCol.textContent)+' innerHTML='+JSON.stringify(mdCol.innerHTML));
   selModels.length=0;aiClearHist();
+}
+
+/* ---------- N · 第十三轮：存档合并口径与删除语义 ---------- */
+console.log('\n=== N · 存档合并与删除（第十三轮） ===');
+{
+  location.protocol='https:';
+  const pSame={date:'2026-10-20',time:'09:30',lon:'120',clock:'true',zi:'23',ji:'2',cat:'hunyin',q:'合婚',pan:'zhuan',method:'chaibu',tq:'suirui'};
+  localStorage.setItem('qm_saves_v1',JSON.stringify([
+    {id:'L1',created_at:'2026-10-20 09:30',label:'本机同局',pillars:'p',params:pSame,src:'local',
+     ai:[{model:'Gemini',text:'当时的解读'}],feedback:'已应验',verified:'yes',cloudId:55}
+  ]));
+  const calls=[];
+  const oldF=fetch;
+  fetch=function(url,init){
+    calls.push({url:String(url),init:init});
+    return Promise.resolve({ok:true,json:()=>Promise.resolve({saves:[
+      {id:55,created_at:'2026-10-20 09:30',label:'云端同局',pillars:'p',params:pSame}
+    ],total:1})});
+  };
+  await renderSaves();
+  const h=g('savesList').innerHTML;
+  ck('N1 同局只出一行（本机优先，云端行不顶掉本机行）',
+     (h.match(/本机同局/g)||[]).length===1&&h.indexOf('云端同局')<0,'实际='+h.slice(0,120));
+  ck('N2 本机行同时标「本」「云」',h.indexOf('>本<')>=0&&h.indexOf('>云<')>=0,'实际='+h.slice(0,240));
+  ck('N3 回填/应验标记不被云端行遮掉',h.indexOf('应验')>=0,'实际='+h.slice(0,240));
+
+  await loadSave('L1');
+  ck('N4 本机 AI 快照可回看',g('rvAi').innerHTML.indexOf('当时的解读')>=0,'实际='+g('rvAi').innerHTML.slice(0,80));
+
+  calls.length=0;
+  await delSave('L1');
+  const d=calls.filter(c=>c.init&&c.init.method==='DELETE');
+  ck('N5 删本机行同时删云端副本',d.length===1&&/id=55/.test(d[0].url),'实际='+JSON.stringify(calls.map(c=>c.url)));
+  ck('N6 本地存档已清空',localSaves().length===0,'实际='+localSaves().length);
+
+  /* N7：clock 不同即不同盘，不得并成一条 */
+  localStorage.setItem('qm_saves_v1',JSON.stringify([
+    {id:'L2',created_at:'x',label:'真太阳时',pillars:'p',params:Object.assign({},pSame,{clock:'true'}),src:'local'},
+    {id:'L3',created_at:'x',label:'北京时间',pillars:'p',params:Object.assign({},pSame,{clock:'std'}),src:'local'}
+  ]));
+  fetch=function(){return Promise.resolve({ok:true,json:()=>Promise.resolve({saves:[],total:0})});};
+  await renderSaves();
+  const h7=g('savesList').innerHTML;
+  ck('N7 同一钟面不同时间基准分成两条',h7.indexOf('真太阳时')>=0&&h7.indexOf('北京时间')>=0,'实际='+h7.slice(0,160));
+  localStorage.removeItem('qm_saves_v1');
+  fetch=oldF;
 }

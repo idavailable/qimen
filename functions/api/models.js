@@ -41,17 +41,22 @@ async function handle(request, env) {
   const unkeyed = models.filter(m => !m.configured).map(m => m.id);
   if (unkeyed.length) warnings.push('以下模型未配置密钥（不可用）：' + unkeyed.join('、'));
 
-  /* F27：defaultModel 必须是**已配密钥**的模型，否则会指向一个必然 400 的 id
-     （例：只配了 GEMINI_API_KEY 而 QM_PROVIDER 未设 → 旧逻辑给出 deepseek-flash）。 */
-  const prefer = String(env.QM_PROVIDER || 'deepseek') === 'gemini'
-    ? (env.GEMINI_MODEL || 'gemini-3.8-flash')
-    : (env.DEEPSEEK_MODEL || 'deepseek-flash');
+  /* F27：defaultModel 必须是**已配密钥**的模型，否则会指向一个必然 400 的 id。
+     2026-11-27：内置清单只剩 Gemini 两型，默认供应商同步改为 gemini；
+     QM_PROVIDER=deepseek 时仍按 DEEPSEEK_* 兜底（后台自定义 provider 用完即走）。 */
+  const prefer = String(env.QM_PROVIDER || 'gemini') === 'deepseek'
+    ? (env.DEEPSEEK_MODEL || 'deepseek-flash')
+    : (env.GEMINI_MODEL || 'gemini-4-hydrogen');
   const configured = models.filter(m => m.configured).map(m => m.id);
+  /* 2026-11-27 修复：QM_PROVIDER=deepseek 时 prefer 可能不在芯片清单里（内置已无 deepseek），
+     旧逻辑会把它当 defaultModel 下发，前端拿去选中一个清单外的 id。改为回落到清单首个。 */
+  const known = models.some(m => m.id === prefer);
+  const fallback = configured[0] || (models[0] && models[0].id) || prefer;
 
   return L.json({
     models: models,
     warnings: warnings,
-    defaultModel: (configured.indexOf(prefer) >= 0) ? prefer : (configured[0] || prefer)
+    defaultModel: (known && configured.indexOf(prefer) >= 0) ? prefer : fallback
   });
 }
 

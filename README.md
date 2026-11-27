@@ -31,8 +31,8 @@ functions/api/          ← Pages Functions（不进静态产物）
   saves.js              D1 盘面存档：列表 / 全量（口令）/ 删除
   _lib.js               CORS、SSE、入参校验、限流、D1 写入、供应商路由
   prompt.js             服务端提示词副本（必须与 public/prompt.js 逐字一致）
-test.js                 回归测试（569 项）
-sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（128 项）
+test.js                 回归测试（597 项）
+sandbox_ui_verify.js    浏览器全局模型沙箱 UI 全流程验证（141 项）
 _audit_dom.js           jsdom 真实 DOM 复核（10 项：换局类别/停止文案/换盘历史/芯片覆盖/对比列等高滚动）
 _smoke_p13.js           jsdom 渲染冒烟（42 项：六种流派组合逐一 cast + 中五宫规则 + 读档回放）
 _smoke_p22.js           jsdom 冒烟（23 项：SW 注册协议判定 + #p= 分享还原 + manifest/sw 静态约束）
@@ -84,7 +84,7 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `DEEPSEEK_API_KEY` | secret | DeepSeek 密钥；配了则 `deepseek-*` 模型可用 |
 | `GEMINI_BASE_URL` | 文本变量 | 默认 `https://generativelanguage.googleapis.com/v1beta/openai`；数据中心 IP 被拒时可改接 CF AI Gateway |
 | `DEEPSEEK_BASE_URL` | 文本变量 | 默认 `https://api.deepseek.com/v1` |
-| `QM_PROVIDER` | 文本变量 | 请求未指定模型时的默认供应商（`deepseek` / `gemini`） |
+| `QM_PROVIDER` | 文本变量 | 请求未指定模型时的默认供应商；**默认 `gemini`**（内置清单只有 Gemini 两型），设 `deepseek` 时仍走 `DEEPSEEK_*` |
 | `CUSTOM_PROVIDERS` | 文本变量 | JSON 数组，后台加供应商无需改代码：`[{"id":"kimi","label":"Moonshot","base":"https://api.moonshot.cn/v1","models":["kimi-k2"]}]`，密钥为 `<ID大写>_API_KEY` |
 | `QM_API_KEY` / `QM_BASE_URL` / `QM_MODEL` | secret / 变量 | 通用兜底（未走上面几家时使用） |
 | `RATE_LIMIT_PER_MIN` | 文本变量 | 每 IP 每分钟上限；**不设 = 不限流** |
@@ -92,11 +92,15 @@ npx wrangler pages secret put QM_API_KEY --project-name=qimen
 | `QM_ALLOW_NULL_ORIGIN` | 文本变量 | 设 `1` 才放行 `Origin: null`。默认拒绝——`null` 同时也是 sandbox iframe 的 Origin，默认放行等于把 IP 隔离的记录暴露给任意页面 |
 | `QM_RETRY_WAIT_MS` | 文本变量 | Gemini 重试间隔毫秒数；默认 `10000`（10 秒）。调小仅用于测试 |
 | `QM_GEMINI_MODELS` / `QM_DEEPSEEK_MODELS` | 文本变量 | 覆盖同族**递推顺序**（逗号分隔，书写顺序即试的顺序）；不设则用内置清单 |
-| `GEMINI_MODEL` / `DEEPSEEK_MODEL` | 文本变量 | 该家默认模型；设在则自动排在递推链最前 |
+| `GEMINI_MODEL` / `DEEPSEEK_MODEL` | 文本变量 | 该家默认模型；设在则自动排在递推链最前。不设时 Gemini 默认 `gemini-4-hydrogen` |
 | `ACCESS_CODE` | secret | 管理口令：`/api/records`、`/api/saves` 的全量查询（`?all=1`）、越权删除、清空校验；未设则一律禁止。**也是跨设备读档的钥匙**——前端存档面板填该口令并勾选「读全部」，即可换网络/换电脑读到全部云端存档 |
 
 模型清单由 `GET /api/models` 动态返回（按密钥是否配置标注可用性），前端渲染成**可多选的模型芯片**，
 选中几个就并行解读几个、横向对比。后台增删供应商/密钥后刷新页面即可，不用改代码。
+
+**内置清单（2026-11-27 起）只有两种**：`gemini-4-hydrogen`（默认首选）与 `gemini-3.8-flash`（备选）。
+同族递推顺序即清单顺序：4 Hydrogen 失败 → 3.8 Flash。DeepSeek 不再出现在芯片上；
+需要别家模型请用 `CUSTOM_PROVIDERS`（后台配置后自动上芯片），或前端直连 BYOK。
 
 ## D1
 
@@ -115,8 +119,8 @@ npm run db:list   # 查最近 20 条
 ## 测试
 
 ```bash
-npm test           # 569 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推 + P1-3 流派配置 90 项 + 五轮云端存档流派/旺衰五态/留痕限长）
-npm run ui:verify  # 128 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
+npm test           # 597 项回归（算法 1080 局不变式 + 克应 81 格 + M3 用神 + 立春干支年边界 + 节气基准解耦 + M4 + Functions + 供应商路由 + Gemini 重试与同族递推 + P1-3 流派配置 90 项 + 五轮云端存档流派/旺衰五态/留痕限长）
+npm run ui:verify  # 141 项浏览器沙箱全流程（含模型芯片与服务端代理 I 组、存档读档 J 组、重试/递推/思考链 K 组、跨设备读档口令 L 组）
 node _audit_dom.js # 10 项 jsdom 真实 DOM 复核（补沙箱不解析 innerHTML 的盲区）
 node _smoke_p13.js # 42 项 P1-3 渲染冒烟（六种流派组合 + 中五宫规则 + 读档回放）
 node _smoke_p22.js # 23 项 P2-2 冒烟（SW 注册协议判定 + #p= 分享还原 + manifest/sw 静态约束）
@@ -225,6 +229,26 @@ node _smoke_p23.js # 75 项 P2-3 冒烟（翻局回放含流派配置 + 复盘�
 **取证排除**（怀疑过、验证不成立）：BYOK 松散 IPv4 记法（`127.1`/`0177.0.0.1`/`0x7f.1`）——`new URL()` 按 WHATWG 规范先规范化为 `127.0.0.1` 再暴露 hostname，现有检查即可拦截，无需补黑名单。
 
 **验证**：`test.js` **569/0**（新增 31.14–31.18）· 沙箱 **128/0** · jsdom 复核 **10/0** · P1-3 冒烟 **42/0** · P2-2 冒烟 **23/0** · P2-3 冒烟 **75/0**。
+
+## 2026-11-27 第十三轮（模型清单收窄 + 全量审计）
+
+| 项 | 做法 |
+|---|---|
+| 内置模型 | 只保留 `gemini-4-hydrogen`（默认首选）与 `gemini-3.8-flash`（备选），移除 `gemini-3.6-flash` / `deepseek-flash` 芯片；`/api/models` 的 `defaultModel`、`QM_PROVIDER` 默认值同步改为 Gemini；同族递推链为 4 Hydrogen → 3.8 Flash。供应商路由代码保留，BYOK 与 `CUSTOM_PROVIDERS` 仍可接别家 |
+
+| 编号 | 级别 | 问题 | 修复 |
+|---|---|---|---|
+| A1 | P2 | 存档列表 `cloud.concat(local)` 让云端行先入列，同局的本机行被去重丢弃——线上环境看不到「当时的 AI 解读」快照与事后回填标记 | 改**本机优先**；云端同局只补 `cloudId`，列表同时显示「本/云」，删除时一并清 |
+| A2 | P2 | 列表去重键漏 `clock`：北京时间与真太阳时同一钟面是两盘，会被并成一条 | 键补 `clock`（与 `histKey` 口径一致） |
+| A3 | P2 | 删本机存档不删云端副本，刷新后云端行又出现（用户以为删不掉） | 条目带 `cloudId` 时同发 DELETE |
+| A4 | P2 | 点「停止」时 abort 异常落到各列，列内叠红字「失败：The operation was aborted.」，与状态栏「已停止」矛盾 | 主动停止只保留已收到的正文，不写失败提示 |
+| A5 | P3 | 上游 429 被统一折成 502，前端无法区分限流与网关故障 | 429 原样回传，文案点明「上游限流」 |
+| A6 | P2（测试） | `_ui_verify_ai.js` 的 `ck(name,cond)` 是布尔式，但 6 处按 `(actual, expected)` 传参——第二个参数为字符串，断言恒真（H11/H13/H14/H18/H19/I4b） | 改为显式 `===` 比较；沙箱断言数 128 → 141（新增 N 组 7 项） |
+| A7 | P3 | 静态资源改动未 bump SW 缓存与 `?v=`，老用户首次打开仍跑旧 app.js | `qimen-v6` + `?v=20261127` |
+
+核对为正确、未改动：CORS 白名单与 `Origin: null` 默认拒绝、BYOK SSRF 五类拦截、D1 按 `ip_hash` 隔离与常量时间口令、SSE 双守卫、思考链剥离、排盘主链（拆补/置闰/茅山、转盘/飞盘、寄宫、旬空驿马）抽样复核未见偏差。
+
+**验证**：`test.js` **597/0** · 沙箱 **141/0** · jsdom 复核 **10/0** · P1-3 冒烟 **42/0** · P2-2 冒烟 **23/0** · P2-3 冒烟 **75/0**。
 
 ## 路线图
 

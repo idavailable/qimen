@@ -1255,17 +1255,20 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   const CP=JSON.stringify([{id:'kimi',label:'Moonshot',base:'https://api.moonshot.cn/v1',models:['kimi-k2']}]);
 
   let mj=await (await fm.handle(mkReqM(),{})).json();
-  ck('28.1 返回 3 个内置模型（v4-pro 已下架）',mj.models.length,3);
+  ck('28.1 内置模型只剩 Gemini 两种（4 Hydrogen / 3.8 Flash）',mj.models.map(m=>m.id).join(','),'gemini-4-hydrogen,gemini-3.8-flash');
   ck('28.2 无密钥时 configured 全 false',mj.models.every(m=>m.configured===false),true);
   ck('28.3 无密钥时给出告警',(mj.warnings||[]).some(w=>w.indexOf('未配置密钥')>=0),true);
   mj=await (await fm.handle(mkReqM(),{GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d'})).json();
   ck('28.4 配密钥后 configured 全 true',mj.models.every(m=>m.configured===true),true);
   ck('28.5 配齐后无告警',(mj.warnings||[]).length,0);
-  ck('28.6 defaultModel=deepseek-flash',mj.defaultModel,'deepseek-flash');
+  ck('28.6 defaultModel=gemini-4-hydrogen',mj.defaultModel,'gemini-4-hydrogen');
   /* F27：只配了 Gemini 密钥时，defaultModel 不能仍指向未配 key 的 deepseek-flash */
   mj=await (await fm.handle(mkReqM(),{GEMINI_API_KEY:'g'})).json();
   ck('28.6b 仅配 Gemini → defaultModel 指向已配模型',/^gemini/i.test(mj.defaultModel),true,mj.defaultModel);
-  ck('28.6c 仅配 Gemini → deepseek-flash 标未配',mj.models.filter(m=>m.id==='deepseek-flash')[0].configured,false);
+  ck('28.6c 仅配 Gemini → 默认模型确实是已配 key 的那个',mj.models.filter(m=>m.id===mj.defaultModel)[0].configured,true);
+  /* 2026-11-27：QM_PROVIDER=deepseek 时 prefer 不在内置清单里，不能当下发默认值 */
+  mj=await (await fm.handle(mkReqM(),{QM_PROVIDER:'deepseek',DEEPSEEK_API_KEY:'d'})).json();
+  ck('28.6d 清单外的 prefer 不得作 defaultModel',mj.defaultModel,'gemini-4-hydrogen');
   mj=await (await fm.handle(mkReqM(),{CUSTOM_PROVIDERS:CP})).json();
   ck('28.7 自定义供应商进入清单',mj.models.some(m=>m.id==='kimi-k2'&&m.pv==='Moonshot'),true);
   ck('28.8 自定义供应商缺密钥 → 告警',(mj.warnings||[]).some(w=>w.indexOf('KIMI_API_KEY')>=0),true);
@@ -1289,7 +1292,7 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   pv=rp({CUSTOM_PROVIDERS:CP,KIMI_API_KEY:'kk'},{model:'kimi-k2'});
   ck('28.16 自定义供应商命中',pv.base==='https://api.moonshot.cn/v1'&&pv.from==='kimi',true,JSON.stringify(pv));
   ck('28.17 全无密钥 → null',rp({},{model:'deepseek-flash'}),null);
-  ck('28.18 未指定模型 → 默认 deepseek',rp(env2,{}).from,'deepseek');
+  ck('28.18 未指定模型 → 默认 Gemini（内置清单已无别家）',rp(env2,{}).from,'gemini');
   ck('28.19 QM_PROVIDER=gemini 生效',rp({GEMINI_API_KEY:'g',DEEPSEEK_API_KEY:'d',QM_PROVIDER:'gemini'},{}).from,'gemini');
   ck('28.20 BYOK 优先于服务端密钥',rp(env2,{base:'https://b/v1',model:'m',key:'k'}).from,'byok');
 
@@ -1297,7 +1300,7 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   pv=rp({DEEPSEEK_API_KEY:'d'},{model:'gemini-3.8-flash'});
   ck('28.24 回落 DeepSeek 模型名换本家',pv.from==='deepseek'&&pv.model==='deepseek-flash',true,JSON.stringify(pv));
   pv=rp({GEMINI_API_KEY:'g'},{model:'deepseek-v4'});
-  ck('28.25 回落 Gemini 模型名换本家',pv.from==='gemini'&&pv.model==='gemini-3.8-flash',true,JSON.stringify(pv));
+  ck('28.25 回落 Gemini 模型名换本家',pv.from==='gemini'&&pv.model==='gemini-4-hydrogen',true,JSON.stringify(pv));
   pv=rp({DEEPSEEK_API_KEY:'d',DEEPSEEK_MODEL:'deepseek-v4'},{model:'gemini-3.8-flash'});
   ck('28.26 回落尊重 DEEPSEEK_MODEL 覆盖',pv.model,'deepseek-v4');
 
@@ -1458,11 +1461,11 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   r30 = await fi.handle(mkReq({ pan: panTxt, model: GEM }), { GEMINI_API_KEY: 'gk', DEEPSEEK_API_KEY: 'dk', QM_DB: db6, QM_RETRY_WAIT_MS: '0' });
   a30 = await readAll(r30);
   ck('30.5 三次重试耗尽后同族递推（共 4 次请求）', up.calls.length, 4);
-  ck('30.6 递推换成同族另一个 Gemini 模型', up.calls[3].model, 'gemini-3.6-flash');
+  ck('30.6 递推换成同族另一个 Gemini 模型', up.calls[3].model, 'gemini-4-hydrogen');
   ck('30.7 递推事件通知前端', (a30.raw.match(/"fallback"/g) || []).length, 1);
-  ck('30.8 递推列文案含目标模型展示名', a30.raw.indexOf('Gemini 3.6 Flash') >= 0, true);
+  ck('30.8 递推列文案含目标模型展示名', a30.raw.indexOf('Gemini 4 Hydrogen') >= 0, true);
   ck('30.9 递推成功仍有完整正文', a30.full, '丁');
-  ck('30.10 D1 留痕记实际作答模型', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[6]), 'gemini-3.6-flash');
+  ck('30.10 D1 留痕记实际作答模型', String(db6.log.find(x => x.sql.indexOf('INSERT') === 0).args[6]), 'gemini-4-hydrogen');
   /* 关键：全程只打 Gemini 通道，一次都不碰 DeepSeek（家族内递推，不跨家） */
   ck('30.10b 递推不跨家族（4 次请求全走 Gemini 通道）', up.calls.every(c => c.url.indexOf('generativelanguage') >= 0), true);
   ck('30.10c 递推不借用别家密钥（无 deepseek-* 模型名）', up.calls.every(c => !/^deepseek/i.test(c.model)), true);
@@ -1497,6 +1500,12 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
   ck('30.15 非 Gemini 503 一次即返（不额外等待）', r30.status === 502 && up.calls.length === 1, true);
   ck('30.16 非 Gemini 走 QM_* 兜底时同样不重试', fi.shouldRetry({ from: 'server', model: 'm1' }, { status: 503 }), false);
 
+  /* 30.16b 第十三轮：上游 429 原样回传（旧版一律折 502，限流被误报成网关故障） */
+  up = scripted([{ status: 429 }]);
+  globalThis.fetch = up;
+  r30 = await fi.handle(mkReq({ pan: panTxt, model: 'deepseek-flash' }), { DEEPSEEK_API_KEY: 'dk', QM_DB: fakeD1(), QM_RETRY_WAIT_MS: '0' });
+  ck('30.16b 上游 429 原样回传（不折成 502）', r30.status === 429 && up.calls.length === 1, true);
+
   /* 30.17–30.19 思考链剥离 */
   ck('30.17 服务端成对 think 整段剔除', L.stripThinking('A<thinking>内心戏</thinking>B'), 'AB');
   ck('30.18 服务端未闭合 think 起至末尾丢弃', L.stripThinking('A<think>还没想完'), 'A');
@@ -1516,11 +1525,11 @@ ck('31.7 2025 立春后年柱=乙巳',QM.gz(QM.yearGZIndex(lc25b.meta.gzYear)),'
 
   /* 30.23–30.28 同族递推：只在同一供应商的其它模型间依次递推，绝不跨家 */
   const fbG = L.fallbackProvider({ DEEPSEEK_API_KEY: 'd', QM_API_KEY: 'q' }, { from: 'gemini', base: 'B', key: 'K', model: 'gemini-3.8-flash' });
-  ck('30.23 递推选同族下一个模型且不选自己', fbG && fbG.model, 'gemini-3.6-flash');
+  ck('30.23 递推选同族下一个模型且不选自己', fbG && fbG.model, 'gemini-4-hydrogen');
   ck('30.24 递推沿用本家通道（base/key 不变）', fbG && fbG.base === 'B' && fbG.key === 'K' && fbG.from === 'gemini', true);
   ck('30.25 有 DeepSeek 密钥也不跨家', fbG && fbG.from, 'gemini');
-  ck('30.26 已试过的模型不再重复投', L.fallbackProvider({}, { from: 'gemini', model: 'gemini-3.8-flash' }, ['gemini-3.6-flash']) === null, true);
-  ck('30.27 同族耗尽 → null（不借别家）', L.fallbackProvider({ DEEPSEEK_API_KEY: 'd' }, { from: 'gemini', model: 'gemini-3.8-flash' }, ['gemini-3.6-flash']) === null, true);
+  ck('30.26 已试过的模型不再重复投', L.fallbackProvider({}, { from: 'gemini', model: 'gemini-3.8-flash' }, ['gemini-4-hydrogen']) === null, true);
+  ck('30.27 同族耗尽 → null（不借别家）', L.fallbackProvider({ DEEPSEEK_API_KEY: 'd' }, { from: 'gemini', model: 'gemini-3.8-flash' }, ['gemini-4-hydrogen']) === null, true);
   ck('30.28 BYOK 无同族清单 → null（不编造模型名）', L.fallbackProvider({}, { from: 'byok', model: 'gpt-4o' }) === null, true);
   ck('30.28b QM_GEMINI_MODELS 可覆盖递推顺序', L.familyModels({ QM_GEMINI_MODELS: 'gemini-x,gemini-y' }, 'gemini').join(','), 'gemini-x,gemini-y');
   ck('30.28c 环境默认模型排在递推链最前', L.familyModels({ GEMINI_MODEL: 'gemini-pro' }, 'gemini')[0], 'gemini-pro');

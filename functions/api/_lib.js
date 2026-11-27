@@ -207,14 +207,16 @@ function customProviderWarnings(env) {
 }
 function norm(base) { return String(base || '').replace(/\/+$/, ''); }
 
-/* ---------- 内置模型清单（models.js 与同族回落链共用同一份，避免两处漂移） ---------- */
+/* ---------- 内置模型清单（models.js 与同族回落链共用同一份，避免两处漂移） ----------
+   2026-11-27：按用户要求只保留 Gemini 4 Hydrogen 与 Gemini 3.8 Flash 两个内置模型
+   （DeepSeek 不再上芯片；供应商路由代码仍保留，后台 CUSTOM_PROVIDERS / BYOK 不受影响）。
+   顺序即同族递推顺序：4 Hydrogen 失败 → 3.8 Flash。 */
 const BUILTIN_MODELS = [
-  { id: 'gemini-3.6-flash', pv: 'Google' },
-  { id: 'gemini-3.8-flash', pv: 'Google' },
-  { id: 'deepseek-flash', pv: 'DeepSeek' }
+  { id: 'gemini-4-hydrogen', pv: 'Google' },
+  { id: 'gemini-3.8-flash', pv: 'Google' }
 ];
 
-/* 模型 id → 展示名：gemini-3.6-flash → Gemini 3.6 Flash */
+/* 模型 id → 展示名：gemini-4-hydrogen → Gemini 4 Hydrogen */
 function modelLabel(id) {
   const s = String(id || '');
   const fam = /^deepseek/i.test(s) ? 'DeepSeek' : (/^gemini/i.test(s) ? 'Gemini' : '');
@@ -305,11 +307,11 @@ function resolveProvider(env, body) {
   }
   /* ④ 兜底：默认 provider → 任一已配 → 通用 QM_* */
   /* F3：回落到别家供应商时必须换用该家的模型名——把 gemini 的模型名原样发给 deepseek 必然上游 400 */
-  const def = String(env.QM_PROVIDER || 'deepseek').toLowerCase();
+  const def = String(env.QM_PROVIDER || 'gemini').toLowerCase();
   if (def === 'gemini' && env.GEMINI_API_KEY) {
     return {
       base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),
-      model: env.GEMINI_MODEL || (/^gemini/i.test(m) ? m : 'gemini-3.8-flash'), key: env.GEMINI_API_KEY, from: 'gemini'
+      model: env.GEMINI_MODEL || (/^gemini/i.test(m) ? m : 'gemini-4-hydrogen'), key: env.GEMINI_API_KEY, from: 'gemini'
     };
   }
   if (env.DEEPSEEK_API_KEY) {
@@ -321,7 +323,7 @@ function resolveProvider(env, body) {
   if (env.GEMINI_API_KEY) {
     return {
       base: norm(env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai'),
-      model: env.GEMINI_MODEL || (/^gemini/i.test(m) ? m : 'gemini-3.8-flash'), key: env.GEMINI_API_KEY, from: 'gemini'
+      model: env.GEMINI_MODEL || (/^gemini/i.test(m) ? m : 'gemini-4-hydrogen'), key: env.GEMINI_API_KEY, from: 'gemini'
     };
   }
   if (env.QM_API_KEY) {

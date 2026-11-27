@@ -93,6 +93,9 @@ async function upstreamErrorResponse(resp) {
      前端只需状态码即可提示重试。 */
   const detail = await upstreamDetail(resp);
   if (detail) console.error('[qimen] 上游 HTTP ' + resp.status + ' 详情:', detail);
+  /* 2026-11-27：429 不再一律折成 502——限流与网关故障对用户是两回事，
+     前端要能显示「稍后再试」而不是误报上游崩了。其余错误仍统一 502（401 原样）。 */
+  if (resp.status === 429) return L.errMsg('上游限流（HTTP 429），请稍后重试', 429);
   return L.errMsg('上游 HTTP ' + resp.status + '，请稍后重试', resp.status === 401 ? 401 : 502);
 }
 
